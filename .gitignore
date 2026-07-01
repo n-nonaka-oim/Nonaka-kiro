@@ -1,0 +1,13 @@
+# Nonaka ワークスペース・メタリポジトリ
+# 目的: ワークスペース横断メタ（.kiro/）のみを版管理する。
+# 各プロジェクトモジュール（clnCoCore / MaterialModule / CommonModule 等）は
+# それぞれ独立した git リポジトリであり、本リポジトリでは追跡しない。
+
+# ルート直下は原則すべて無視し、.kiro と本ファイルのみ追跡する
+/*
+!/.gitignore
+!/.kiro/
+
+# .kiro 配下の除外（必要に応じて）
+.kiro/**/bin/
+.kiro/**/obj/

@@ -1,0 +1,184 @@
+erDiagram
+    m_items {
+        int id PK
+        string item_code
+        string item_name
+        int package_type_id FK
+        int supplier_id FK
+        int usage_1 FK
+    }
+
+    m_suppliers {
+        int id PK
+        string supplier_code
+        string supplier_name
+    }
+
+    m_purchase_conditions {
+        int id PK
+        int item_id FK
+        int purchase_type FK
+        string supplier_code
+        string condition_no
+    }
+
+    m_warehouses {
+        int id PK
+        string warehouse_code
+        string warehouse_name
+    }
+
+    m_tanks {
+        int id PK
+        string tank_no
+        string tank_name
+        string item_code
+    }
+
+    m_delivery_locations {
+        int id PK
+        string location_name
+        string cost_center
+    }
+
+    m_calendar {
+        int id PK
+        date calendar_date
+        bool is_business_day
+    }
+
+    m_bom_headers {
+        int id PK
+        string product_code
+        string product_name
+        string version
+    }
+
+    m_bom_details {
+        int id PK
+        int bom_header_id FK
+        int item_id FK
+        decimal usage_qty
+    }
+
+    m_package_types {
+        int id PK
+        string package_type_name
+    }
+
+    m_purchase_types {
+        int id PK
+        string type_name
+    }
+
+    m_order_statuses {
+        int id PK
+        string status_name
+    }
+
+    m_forecast_sources {
+        int id PK
+        string source_code
+        string source_name
+    }
+
+    m_usage_categories {
+        int id PK
+        string category_name
+    }
+
+    m_company_info {
+        int id PK
+        string user_code
+        string company_name_1
+    }
+
+    m_report_notes {
+        int id PK
+        string report_type
+        string note_text
+    }
+
+    m_user_preferences {
+        int id PK
+        string user_id
+        string preference_key
+    }
+
+    t_orders {
+        int id PK
+        string order_no
+        int item_id
+        int order_status
+        date delivery_date
+        int forecast_id FK
+    }
+
+    t_receivings {
+        int id PK
+        int order_id FK
+        date received_date
+        decimal received_qty
+    }
+
+    t_dispatches {
+        int id PK
+        int item_id FK
+        date dispatch_date
+        decimal dispatch_qty
+    }
+
+    t_stocks {
+        int id PK
+        int item_id
+        string warehouse_code
+    }
+
+    t_stock_ledgers {
+        int id PK
+        int item_id
+        string warehouse_code
+        date record_date
+    }
+
+    t_order_forecasts {
+        int id PK
+        int item_id FK
+        int provisional_order_id FK
+        date forecast_date
+    }
+
+    t_consumption_forecasts {
+        int id PK
+        int item_id FK
+        int source_id FK
+        date forecast_date
+    }
+
+    t_tank_checks {
+        int id PK
+        int tank_id FK
+        date check_date
+    }
+
+    t_order_reports {
+        int id PK
+        string report_type
+        string reference_code
+    }
+
+    m_items ||--o| m_package_types : "package_type_id"
+    m_items ||--o| m_suppliers : "supplier_id"
+    m_items ||--o| m_usage_categories : "usage_1"
+    m_purchase_conditions ||--o| m_items : "item_id"
+    m_purchase_conditions ||--o| m_purchase_types : "purchase_type"
+    m_bom_headers ||--|{ m_bom_details : "bom_header_id"
+    m_bom_details ||--o| m_items : "item_id"
+    t_orders ||--o| m_items : "item_id"
+    t_receivings ||--|| t_orders : "order_id"
+    t_dispatches ||--o| m_items : "item_id"
+    t_order_forecasts ||--o| m_items : "item_id"
+    t_order_forecasts ||--o| t_orders : "provisional_order_id"
+    t_consumption_forecasts ||--o| m_items : "item_id"
+    t_consumption_forecasts ||--o| m_forecast_sources : "source_id"
+    t_tank_checks ||--o| m_tanks : "tank_id"

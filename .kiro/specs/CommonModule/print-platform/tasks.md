@@ -1,0 +1,202 @@
+# Implementation Plan: print-platform（共通プリント基盤）
+
+## Overview
+
+design.md に基づき、共通プリント基盤を段階的に実装する。SMTP送信基盤（smtp-sender）と一対一で対応する構成であり、実装順は「DBスキーマ(DDL)＋ドキュメント → CommonModule 共通エンティティ・DbContext → 投入サービス `IPrintQueueService` → 共通監視画面 `Common_PrintMonitor` → PrintAgent（別ソリューション）読取先変更＋デュアルモード → カットオーバー（移行・切替）」とする。各段階で動作確認できる最小単位に分割する。
+
+実装の中心は次の2つ。
+- 既存 `CommonModule` プロジェクト（Area `Common`）: 共通エンティティ `TPrintQueue`／`MPrintAgentControl`、`CommonDbContext` への DbSet 追加、`IPrintQueueService`／`PrintQueueService`、共通監視画面 `Common_PrintMonitor`（`/Common/PrintMonitor`）。
+- 既存 `PrintAgent`（`\\OJIADM23120073\Labs\WindowsService\PrintAgent`、別ソリューションの .NET Worker）の改修: `t_order_reports` 依存を `t_print_queue` へ置換、接続先を `db_common_dev` へ変更、`pdf_path` 優先のデュアルモード対応、`row_version` 追加による楽観ロック実効化。
+
+前提・運用ルール:
+- DBスキーマの作成・実行はユーザー側で行う。タスクでは DDL SQL ファイル（`CommonModule/docs/sql/`）を作成するところまでを行い、実行はユーザーに依頼する。
+- ビルド・テスト実行・実印刷はユーザー側で行う（タスク内でビルド・実行・実印刷はしない）。
+- MainWeb・AuthModule のソース・設定は変更しない（参照のみ）。成果物は CommonModule 内で完結させる（R12.1・R12.2）。
+- Correctness Property 1〜8 は CommonModule.Tests の PBT（FsCheck/CsCheck 等、最低100イテレーション）で実装し、各テストに `// Feature: print-platform, Property {n}` タグを付す。Property 9 は並行統合テスト（1〜2例）で実装する。
+- エラー列の物理名は `error_message` に統一（requirements 追随更新済み）。`m_print_agent_control` は 1行運用・単一Writer のため `row_version` を付与しない（`m_smtp_agent_control` とのパリティ＝ルールの明示的例外）。
+- Spec は正本 `.kiro/specs/CommonModule/print-platform/` とコピー `CommonModule/docs/specs/print-platform/` の2箇所に反映する。
+
+## Tasks
+
+- [ ] 1. DBスキーマDDLとドキュメントの整備（共通DB `db_common_dev`）
+  - [ ] 1.1 `t_print_queue`・`m_print_agent_control` の CREATE TABLE DDL を作成
+    - `CommonModule/docs/sql/` に 2 テーブルの CREATE TABLE スクリプトを作成
+    - `t_print_queue`: id(IDENTITY,PK)/module(NOT NULL)/report_type(NOT NULL)/reference_code(NOT NULL)/output_type(NOT NULL)/print_status(NOT NULL,既定1)/print_payload(nvarchar(max))/pdf_path(nvarchar(500))/printer_name(nvarchar(200))/copies(NOT NULL,既定1)/picked_at/printed_at/error_message(nvarchar(500))/created_at(NOT NULL)/updated_at(NOT NULL)/row_version(rowversion)。fax_status 列は持たせない
+    - インデックス `IX_t_print_queue_status_created (print_status, created_at)`・`IX_t_print_queue_reference_code (reference_code)`・`IX_t_print_queue_module (module)` を含める
+    - `m_print_agent_control`: id(IDENTITY,PK)/last_heartbeat_at/machine_name(nvarchar(100))/updated_at(NOT NULL)。row_version は持たせない
+    - スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う」旨をコメントで明記
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 3.1, 3.3, 6.1_
+
+  - [ ] 1.2 テーブル定義書・ER図を更新
+    - `.kiro/docs/db/テーブル定義書.md` に `t_print_queue`・`m_print_agent_control` の列名・日本語名・型・備考を追記
+    - `.kiro/docs/db/ER図.md` に 2 テーブルと `t_smtp_queue`／`m_smtp_agent_control` との対（共通DB配置）を追記
+    - _Requirements: 1.1, 6.1_
+
+- [ ] 2. CommonModule 共通エンティティと DbContext
+  - [ ] 2.1 エンティティ `TPrintQueue` を実装
+    - `CommonModule/Data/Entities/TPrintQueue.cs` を `TSmtpQueue` と同じ DataAnnotations 作法で実装（`[Table("t_print_queue")]`/`[Column]`/`[Key]`/`[DatabaseGenerated(Identity)]`/`[MaxLength]`）
+    - design「Data Models」章の 16 列に一致（`module`・`pdf_path`・`printer_name` を含む）。`RowVersion` に `[Timestamp]`（`row_version`）
+    - _Requirements: 1.2, 1.5, 1.6, 2.1_
+
+  - [ ] 2.2 エンティティ `MPrintAgentControl` を実装
+    - `CommonModule/Data/Entities/MPrintAgentControl.cs` を `MSmtpAgentControl` と対の 1行運用で実装（`last_heartbeat_at`(UTC)・`machine_name`・`updated_at`）
+    - `row_version` は付与しない（パリティ＝ルールの明示的例外）
+    - _Requirements: 6.1, 6.2, 6.4_
+
+  - [ ] 2.3 `CommonDbContext` に DbSet を追加
+    - `CommonModule/Data/CommonDbContext.cs` に `DbSet<TPrintQueue> PrintQueue` と `DbSet<MPrintAgentControl> PrintAgentControls` を追加
+    - OnModelCreating は実装せずマッピングはエンティティ側 DataAnnotations に委ねる（既存作法どおり）
+    - _Requirements: 1.1, 8.2, 8.3_
+
+- [ ] 3. 投入サービス `IPrintQueueService` とDI登録
+  - [ ] 3.1 `IPrintQueueService` / `PrintQueueService` を実装
+    - `CommonModule/Services/` に `IPrintQueueService`（`EnqueueAsync`）と `internal` 実装 `PrintQueueService` を作成（`ISmtpQueueService`/`SmtpQueueService` と同作法）
+    - `print_status=1` で 1 件 INSERT。`created_at == updated_at = DateTime.UtcNow`。`t_print_queue` のみ操作し `t_order_reports` にアクセスしない
+    - 必須項目（`module`/`reportType`/`referenceCode`）が空白のみなら `ArgumentException`。`printPayload` と `pdfPath` が両方空白のみなら `ArgumentException`。`copies` は 1 未満なら 1 に正規化
+    - _Requirements: 1.5, 4.1, 4.2, 4.3, 4.4_
+
+  - [ ]* 3.2 投入不変条件のプロパティテスト
+    - **Property 1: 投入は t_print_queue に待機ジョブを1件追加し入力を保持する**
+    - **Validates: Requirements 1.5, 4.1, 4.2, 4.3**
+    - EF Core InMemory で `EnqueueAsync` を検証（1件追加・print_status=1・入力一致・copies正規化・created_at==updated_at・他テーブル不操作）。`// Feature: print-platform, Property 1` タグ、100イテレーション以上
+
+  - [ ]* 3.3 投入拒否のプロパティテスト
+    - **Property 2: 必須項目欠落・出力ソース欠落の投入は拒否される**
+    - **Validates: Requirements 4.2, 4.3**
+    - 必須欠落 または payload・pdf_path 両方空白の入力で `ArgumentException`・テーブル不変を検証。`// Feature: print-platform, Property 2` タグ、100イテレーション以上
+
+  - [ ] 3.4 `AddCommonModule` に DI 登録を追加
+    - `CommonModule/Extensions/CommonModuleExtensions.cs`（`AddCommonModule`）に `services.AddScoped<IPrintQueueService, PrintQueueService>()` を追加（`ISmtpQueueService` と対・Scoped）
+    - `CommonDbContext` 登録・接続文字列 "CommonDb" は既存のまま（MainWeb は変更しない）
+    - _Requirements: 4.1, 12.1, 12.2_
+
+- [ ] 4. 共通監視画面 `Common_PrintMonitor`（`/Common/PrintMonitor`）
+  - [ ] 4.1 一覧・フィルタ・サマリの PageModel を実装
+    - `CommonModule/Areas/Common/Pages/PrintMonitor/Index.cshtml.cs` に `[Authorize(Policy = "DbPermissionCheck")]` を付与し `CommonDbContext` を直接注入
+    - 一覧: module/report_type/reference_code/print_status/copies/picked_at/printed_at/error_message/created_at/updated_at（pdf_path 有無アイコン）。`Id` 降順・ページング（既定30件、選択肢 10/20/30/50/100）
+    - フィルタ: print_status・report_type・キーワード（reference_code 部分一致）・作成日付範囲（JST入力→UTC境界変換、SmtpMonitor と同方式）。サマリ: print_status 別件数（待機1/処理中2/完了3/エラー9）を全件ベースで集計
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 9.1, 9.2, 9.3_
+
+  - [ ]* 4.2 フィルタのプロパティテスト
+    - **Property 4: フィルタ結果は全条件を満たす**
+    - **Validates: Requirements 9.2**
+    - ジョブ集合＋任意フィルタ条件を生成し、結果の全行が各指定条件を満たし未指定条件は絞り込まないことを検証。`// Feature: print-platform, Property 4` タグ、100イテレーション以上
+
+  - [ ]* 4.3 サマリのプロパティテスト
+    - **Property 5: サマリ件数は母集合と整合する**
+    - **Validates: Requirements 9.3**
+    - ジョブ集合を生成し、各 status 件数が母集合の該当行数と一致し合計が status∈{1,2,3,9} 行数に一致することを検証。`// Feature: print-platform, Property 5` タグ、100イテレーション以上
+
+  - [ ] 4.4 死活判定を実装
+    - `m_print_agent_control` の最終 heartbeat が 30 秒以内なら「ポーリング中」、超過（または null）なら「応答なし」。`HeartbeatAliveSeconds = 30`（SmtpMonitor と同値・同ロジック）。マシン名・最終応答時刻(JST)を表示
+    - _Requirements: 9.6_
+
+  - [ ]* 4.5 死活判定のプロパティテスト
+    - **Property 6: 死活判定は heartbeat 閾値と同値**
+    - **Validates: Requirements 9.6**
+    - 経過時間（負・0〜数分・境界30秒ちょうど・null）を生成し、Alive 判定が `経過<=30秒` と同値・null は「応答なし」を検証。`// Feature: print-platform, Property 6` タグ、100イテレーション以上
+
+  - [ ] 4.6 再出力 `OnPostReprintAsync` を実装
+    - 完了(3)・エラー(9) かつ（`print_payload` または `pdf_path` の一方が非空）のジョブのみ `print_status=1` に戻し、`picked_at`/`printed_at`/`error_message` をクリア、`updated_at=UtcNow`
+    - 待機(1)・処理中(2)・対象外(0) は不正遷移として拒否し通知。payload・pdf_path ともに無しは「印刷ソースが無いため再出力できない」旨を通知
+    - `DbUpdateConcurrencyException` を捕捉し「他のユーザーが先に更新しました。画面を再読み込みしてください。」を通知
+    - _Requirements: 2.2, 2.3, 9.4, 9.5_
+
+  - [ ]* 4.7 再出力遷移のプロパティテスト
+    - **Property 3: 再出力は完了・エラーかつ出力ソース有りのみを待機へ戻し、それ以外は不変**
+    - **Validates: Requirements 9.4, 9.5**
+    - print_status∈{0,1,2,3,9}×payload/pdf_path 有無を生成し、3/9 かつ出力ソース有りのみ 1 へ遷移＋クリア、他は不変を検証。`// Feature: print-platform, Property 3` タグ、100イテレーション以上
+
+  - [ ] 4.8 監視画面ビュー `Index.cshtml` を実装
+    - Area "Common" 共通スタイル（Bootstrap 5 + vanilla JS、site.css は変更しない）で一覧・フィルタ・サマリ・死活表示・再出力操作・error_message 表示を描画（`Common_SmtpMonitor` と一貫）
+    - _Requirements: 9.1, 9.6, 9.7, 10.1_
+
+- [ ] 5. チェックポイント - CommonModule のテストを通す
+  - すべてのテスト（Property 1〜6）が通ることを確認し、不明点があればユーザーに確認する。
+
+- [ ] 6. PrintAgent（別ソリューション）のエンティティ・DbContext・接続先変更
+  - [ ] 6.1 Worker 側エンティティ `TPrintQueue` を実装（`TOrderReport` を置換）
+    - `\\OJIADM23120073\Labs\WindowsService\PrintAgent\Models\` に `t_print_queue` へマップする `TPrintQueue` を新規実装（PrintAgent 名前空間）
+    - `TOrderReport` からの差分: `module` 追加・`pdf_path` 追加・`fax_status` 削除・`row_version`（`[Timestamp]`）追加・完了日時を `printed_at` に一本化・`printer_name`/`error_message` 継続
+    - CommonModule 側 `TPrintQueue` と同一テーブル・同一列にマップされるようスキーマを一致させる
+    - _Requirements: 1.6, 2.1, 5.1, 7.1_
+
+  - [ ] 6.2 `PrintAgentDbContext` を改修
+    - `DbSet<TOrderReport> OrderReports` を廃し `DbSet<TPrintQueue> PrintQueue`（`ToTable("t_print_queue")`）へ差し替え
+    - `MPrintAgentControl`（`ToTable("m_print_agent_control")`）は継続（読取先 DB が db_common_dev に変わる）
+    - _Requirements: 5.1, 5.2, 6.1_
+
+  - [ ] 6.3 接続文字列を `db_common_dev` へ変更
+    - `PrintAgent/appsettings.json` の `ConnectionStrings:CloudDb` を `db_material_dev` から `db_common_dev` へ変更（heartbeat 先も db_common_dev）
+    - _Requirements: 5.1, 5.2, 6.1_
+
+- [ ] 7. PrintAgent Worker（デュアルモード・状態遷移・row_version 実効化）
+  - [ ] 7.1 出力ソース選択（デュアルモード）と状態遷移を実装
+    - `PrintJobWorker` の待機取得条件を「`print_status=1` かつ（`print_payload` 非 NULL または `pdf_path` 非 NULL）」に更新
+    - 出力ソース選択: `pdf_path` 非空ならその PDF を直接サイレント印刷（生成しない）、空なら `print_payload` から `PdfGeneratorService` で生成して印刷
+    - 取得時 `1→2`・`picked_at` 設定、完了時 `print_status=3`・`printed_at=UtcNow`（旧 completed_at/print_at 二重設定を廃止）、失敗時 `print_status=9`・`error_message`（500字切詰）。PDF生成・SumatraPDF印刷ロジック自体は不変
+    - _Requirements: 5.3, 5.4, 5.5, 5.6, 1.6_
+
+  - [ ]* 7.2 出力ソース選択のプロパティテスト
+    - **Property 8: 出力ソース選択は pdf_path を優先する（デュアルモード）**
+    - **Validates: Requirements 5.6**
+    - pdf_path 有無×payload 有無の全組み合わせを生成し、pdf_path 非空→直接印刷・空→生成印刷を一意選択（pdf_path 非空時 payload 有無は不問）を純粋関数として検証。`// Feature: print-platform, Property 8` タグ、100イテレーション以上（CommonModule.Tests）
+
+  - [ ]* 7.3 状態遷移単調性のプロパティテスト
+    - **Property 7: 印刷ステータス遷移の単調性**
+    - **Validates: Requirements 1.4, 5.3, 5.4, 5.5**
+    - print_status と操作列を生成し、Worker は `1→2`/`2→3`/`2→9`、再出力は `3→1`/`9→1` のみ許容、3/9→2 が起きず 0 は非対象を純粋規則として検証。`// Feature: print-platform, Property 7` タグ、100イテレーション以上（CommonModule.Tests）
+
+  - [ ] 7.4 heartbeat 更新（読取先 db_common_dev）を確認・維持
+    - ポーリング毎に `m_print_agent_control.last_heartbeat_at`(UTC)・`machine_name` を更新（db_common_dev）。更新失敗は警告ログのみで処理継続（ロジック不変）
+    - _Requirements: 6.2, 6.3_
+
+  - [ ]* 7.5 二重取得防止の並行統合テスト
+    - **Property 9: row_version による二重取得防止**
+    - **Validates: Requirements 2.1, 2.2**
+    - 同一 `t_print_queue` 待機行を 2 コンテキストで取得・`print_status=2` 更新し、一方成功・他方 `DbUpdateConcurrencyException`（スキップ）を確認（INTEGRATION・1〜2例）
+    - _Requirements: 2.1, 2.2_
+
+- [ ] 8. チェックポイント - PrintAgent/統合のテストを通す
+  - すべてのテスト（Property 7〜9）が通ることを確認し、不明点があればユーザーに確認する。実印刷・実デプロイはユーザー側。
+
+- [ ] 9. カットオーバー（移行・切替）とSpec同期
+  - [ ] 9.1 未処理印刷データの移行 SQL を作成
+    - `CommonModule/docs/sql/` に `t_order_reports` の `print_status∈{1,2}` を `t_print_queue` へ移行する INSERT スクリプトを作成
+    - 列対応: `module` 既定 `material`／`pdf_path` 無ければ NULL／`completed_at`/`print_at`→`printed_at`／`fax_status` は移行しない／`row_version` は新規採番。`print_status=2` の扱い（1へ戻す or 除外）はコメントで運用判断を明記
+    - 取り残しゼロ照合（移行前未処理件数＝移行後追加件数）の確認クエリを併記。スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う・`t_order_reports` は削除せず保全」旨を明記
+    - _Requirements: 11.2, 11.4, 11.5, 3.2_
+
+  - [ ] 9.2 Spec を CommonModule/Doc 側に同期
+    - `.kiro/specs/CommonModule/print-platform/` の requirements.md・design.md・tasks.md を `CommonModule/docs/specs/print-platform/` にコピー（byte一致）
+    - _Requirements: （プロジェクトルール: Spec 2箇所配置 / 12.3）_
+
+- [ ] 10. 最終チェックポイント - 全テストを通す
+  - すべてのテスト（Property 1〜9）が通ることを確認し、不明点があればユーザーに確認する。カットオーバー（③投入先切替は dispatch-monitoring-consolidation 所有・④読取先切替はユーザーデプロイ）の実施順序を確認する。
+
+## Notes
+
+- `*` 付きサブタスクは省略可能（テスト）で、MVP優先時はスキップできる。コア実装タスクには `*` を付けていない。
+- Correctness Property 1〜8 は CommonModule.Tests の PBT（最低100イテレーション）、Property 9 は並行統合テストで実装する（design「Testing Strategy」準拠）。Property 7・8 は状態遷移／出力ソース選択の純粋規則として CommonModule.Tests に置く。
+- DBスキーマの作成・実行、ビルド、テスト実行、実印刷、PrintAgent の再デプロイはユーザー側で実施する（タスク内で実行しない）。
+- 投入先切替（PrintJobService → IPrintQueueService）と旧 Monitor 廃止は `dispatch-monitoring-consolidation` が所有する（本 spec はスキーマ契約・CommonModule 受け口・PrintAgent 読取先・Common_PrintMonitor・カットオーバー定義を所有）。
+- MainWeb・AuthModule は変更しない。成果物は CommonModule 内で完結し、Spec は2箇所に配置する。
+
+## Task Dependency Graph
+
+```json
+{
+  "waves": [
+    { "id": 0, "tasks": ["1.1"] },
+    { "id": 1, "tasks": ["1.2", "2.1", "2.2"] },
+    { "id": 2, "tasks": ["2.3"] },
+    { "id": 3, "tasks": ["3.1", "4.1", "4.4"] },
+    { "id": 4, "tasks": ["3.2", "3.3", "3.4", "4.2", "4.3", "4.5", "4.6"] },
+    { "id": 5, "tasks": ["4.7", "4.8"] },
+    { "id": 6, "tasks": ["6.1", "6.2", "6.3"] },
+    { "id": 7, "tasks": ["7.1", "7.4"] },
+    { "id": 8, "tasks": ["7.2", "7.3", "7.5"] },
+    { "id": 9, "tasks": ["9.1", "9.2"] }
+  ]
+}
+```
