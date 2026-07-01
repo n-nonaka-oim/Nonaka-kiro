@@ -33,7 +33,7 @@
 - 基幹システム構築基準（`\\OJIADM23120073\Labs\sdoc\基幹システム構築基準.md`）に準拠する。
 - DB 命名規則（`\\OJIADM23120073\Labs\sdoc\命名規則(db).xlsx`）に準拠する。
 - 新規エンティティには `row_version`（`[Timestamp]`）を含める（プロジェクトルール「排他制御・同時接続対応」）。
-- 成果物は `.kiro/specs/CommonModule/print-platform/`（正本）と `CommonModule/docs/specs/print-platform/`（コピー）の2箇所に配置する。（R12.3）
+- 成果物は `.kiro/specs/CommonModule/print-platform/` に単一正本として配置する（モジュール別コピーは持たない）。（R12.3）
 
 ## Architecture
 
@@ -454,7 +454,7 @@ flowchart TD
 
 - 本設計由来の変更は **MainWeb・AuthModule のソース・設定を変更しない**（参照のみ）。（R12.1）
 - CommonModule のホスト登録（`ModuleRegistration`）が必要な場合は **CommonModule 側プラットフォームの所有**とし、MainWeb への変更は最小限かつ **別途ユーザー確認**を要する。本設計の主たる成果物（エンティティ・DbSet・投入サービス・監視画面・DI 登録）は CommonModule 内で完結する。（R12.2 / A5）
-- 成果物は `.kiro/specs/CommonModule/print-platform/`（正本）と `CommonModule/docs/specs/print-platform/`（コピー）の2箇所に配置する。（R12.3）
+- 成果物は `.kiro/specs/CommonModule/print-platform/` に単一正本として配置する（モジュール別コピーは持たない）。（R12.3）
 - 設計・実装は基幹システム構築基準に準拠する。（R12.4）
 - 新規エンティティ（`t_print_queue`・`m_print_agent_control`）は命名規則・排他制御方針に準拠する。（R12.5）
 

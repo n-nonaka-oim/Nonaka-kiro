@@ -14,7 +14,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 - MainWeb・AuthModule のソース・設定は変更しない（参照のみ）。成果物は CommonModule 内で完結させる（R12.1・R12.2）。
 - Correctness Property 1〜8 は CommonModule.Tests の PBT（FsCheck/CsCheck 等、最低100イテレーション）で実装し、各テストに `// Feature: print-platform, Property {n}` タグを付す。Property 9 は並行統合テスト（1〜2例）で実装する。
 - エラー列の物理名は `error_message` に統一（requirements 追随更新済み）。`m_print_agent_control` は 1行運用・単一Writer のため `row_version` を付与しない（`m_smtp_agent_control` とのパリティ＝ルールの明示的例外）。
-- Spec は正本 `.kiro/specs/CommonModule/print-platform/` とコピー `CommonModule/docs/specs/print-platform/` の2箇所に反映する。
+- Spec は `.kiro/specs/CommonModule/print-platform/` に単一正本として管理する（モジュール別コピーは持たない）。
 
 ## Tasks
 
@@ -167,9 +167,9 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - 取り残しゼロ照合（移行前未処理件数＝移行後追加件数）の確認クエリを併記。スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う・`t_order_reports` は削除せず保全」旨を明記
     - _Requirements: 11.2, 11.4, 11.5, 3.2_
 
-  - [ ] 9.2 Spec を CommonModule/Doc 側に同期
-    - `.kiro/specs/CommonModule/print-platform/` の requirements.md・design.md・tasks.md を `CommonModule/docs/specs/print-platform/` にコピー（byte一致）
-    - _Requirements: （プロジェクトルール: Spec 2箇所配置 / 12.3）_
+  - [ ] 9.2 Spec の最終整合確認（単一正本）
+    - `.kiro/specs/CommonModule/print-platform/` の requirements.md・design.md・tasks.md の整合を確認（モジュール別コピーは廃止済み・同期不要）
+    - _Requirements: （プロジェクトルール: 単一正本）_
 
 - [ ] 10. 最終チェックポイント - 全テストを通す
   - すべてのテスト（Property 1〜9）が通ることを確認し、不明点があればユーザーに確認する。カットオーバー（③投入先切替は dispatch-monitoring-consolidation 所有・④読取先切替はユーザーデプロイ）の実施順序を確認する。
@@ -180,7 +180,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 - Correctness Property 1〜8 は CommonModule.Tests の PBT（最低100イテレーション）、Property 9 は並行統合テストで実装する（design「Testing Strategy」準拠）。Property 7・8 は状態遷移／出力ソース選択の純粋規則として CommonModule.Tests に置く。
 - DBスキーマの作成・実行、ビルド、テスト実行、実印刷、PrintAgent の再デプロイはユーザー側で実施する（タスク内で実行しない）。
 - 投入先切替（PrintJobService → IPrintQueueService）と旧 Monitor 廃止は `dispatch-monitoring-consolidation` が所有する（本 spec はスキーマ契約・CommonModule 受け口・PrintAgent 読取先・Common_PrintMonitor・カットオーバー定義を所有）。
-- MainWeb・AuthModule は変更しない。成果物は CommonModule 内で完結し、Spec は2箇所に配置する。
+- MainWeb・AuthModule は変更しない。成果物は CommonModule 内で完結し、Spec は `.kiro/specs/CommonModule/` に単一正本で配置する。
 
 ## Task Dependency Graph
 

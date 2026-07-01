@@ -39,19 +39,16 @@ requirements / design / tasks や実装が大きくなる場合は、必ず**最
 ## セッション開始時の確認事項
 
 1. 最新の `.kiro/session-memo/session-memo-YYYYMMDD.md` を読んで前回の状態を把握する
-2. `MaterialModule/docs/specs/README.md` で更新ルールを確認する
+2. 本ルール（`project-rules.md`）の「Spec管理ルール」で spec 配置（単一正本）を確認する
 
 ## セッション終了時の必須作業
 
 1. `.kiro/session-memo/session-memo-YYYYMMDD.md` を作成・更新する（本日の完了作業・未完了タスク・参照ファイル一覧）
-2. 変更したページの Spec を更新する:
-   - `.kiro/specs/{feature-name}/requirements.md` — 正本
-   - `.kiro/specs/{feature-name}/design.md` — 正本
-   - `.kiro/specs/{feature-name}/tasks.md` — 正本
-   - `MaterialModule/docs/specs/{feature-name}/requirements.md` — コピー
-   - `MaterialModule/docs/specs/{feature-name}/design.md` — コピー
-   - `MaterialModule/docs/specs/{feature-name}/tasks.md` — コピー
-3. 全体Spec（`.kiro/specs/material-module/`）にも該当する変更があれば反映する
+2. 変更したページの Spec（単一正本）を更新する:
+   - `.kiro/specs/{Module}/{feature-name}/requirements.md`
+   - `.kiro/specs/{Module}/{feature-name}/design.md`
+   - `.kiro/specs/{Module}/{feature-name}/tasks.md`
+3. 全体Spec（`.kiro/specs/MaterialModule/material-module/`）にも該当する変更があれば反映する
 
 ## ドキュメント配置ルール（モジュール単位管理）
 
@@ -61,17 +58,15 @@ requirements / design / tasks や実装が大きくなる場合は、必ず**最
 - **横断DB参照**: `.kiro/docs/db/`（`テーブル定義書.md`・`ER図.*`・`common-db-design.md` 等。複数DB/モジュールにまたがるため1本に集約）。
 - **横断設計・方針**: `.kiro/docs/`（例: `concurrency-control-design.md`）。
 - **各モジュール固有**: 当該モジュールの `docs/`（例: `MaterialModule/docs/`＝資材固有、`CommonModule/docs/`＝共通基盤、`PrintAgent/docs/`・`SmtpAgent/docs/`＝各エージェント）。
-- **spec 正本**: `.kiro/specs/{feature-name}/`（Kiro 参照・移動しない）。コピーは所有モジュールの `docs/specs/{feature-name}/` に配置する。
+- **spec 正本（単一）**: `.kiro/specs/{Module}/{feature-name}/`（Kiro 参照・**単一正本**。モジュール名フォルダで入れ子管理し、モジュール別コピーは持たない）。
 
 ## Spec管理ルール
 
-- Specは**2箇所に配置**すること:
-  1. `.kiro/specs/{feature-name}/` — Kiro用（正本・移動しない）
-  2. 所有モジュールの `docs/specs/{feature-name}/` — ドキュメント用（コピー）
-     - 資材機能 → `MaterialModule/docs/specs/`
-     - 共通基盤（print-platform / smtp-sender 等）→ `CommonModule/docs/specs/`
-- Spec作成・更新時は必ず両方に反映する
-- 正本は `.kiro/specs/` 側
+- Spec は **`.kiro/specs/{Module}/{feature-name}/` に単一正本**として配置する（モジュール名フォルダで入れ子管理）。
+  - 資材機能 → `.kiro/specs/MaterialModule/{feature}/`
+  - 共通基盤（print-platform / smtp-sender 等）→ `.kiro/specs/CommonModule/{feature}/`
+- **モジュール別のコピー（`<module>/docs/specs/`）は持たない**（旧「2箇所配置」ルールは廃止。ドリフト防止・単一真実）。
+- `.kiro` はワークスペース・メタリポジトリ（Nonaka ルート）で版管理する。
 
 ## ビルド・テスト
 

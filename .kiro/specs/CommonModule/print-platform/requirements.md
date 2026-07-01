@@ -190,7 +190,7 @@
 
 1. THE 本spec由来の変更 SHALL MainWeb および AuthModule のソース・設定を変更しない。
 2. WHERE CommonModule のホスト登録（ModuleRegistration）変更が必要となる、THE 当該変更 SHALL CommonModule 側プラットフォームの所有とし、MainWeb への変更は最小限とした上で別途ユーザー確認を要する。
-3. THE 本spec成果物 SHALL `.kiro/specs/CommonModule/print-platform/`（正本）と `CommonModule/docs/specs/print-platform/`（コピー）の2箇所に配置される。
+3. THE 本spec成果物 SHALL `.kiro/specs/CommonModule/print-platform/` に単一正本として配置される（モジュール別コピーは持たない）。
 4. THE 設計・実装 SHALL 基幹システム構築基準（`\\OJIADM23120073\Labs\sdoc\基幹システム構築基準.md`）に準拠する。
 5. WHERE 新規エンティティ（`t_print_queue`・`m_print_agent_control`）を追加する、THE 当該エンティティ SHALL プロジェクトの命名規則および排他制御方針に準拠する。
 
