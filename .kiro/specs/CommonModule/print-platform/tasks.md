@@ -48,8 +48,8 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - OnModelCreating は実装せずマッピングはエンティティ側 DataAnnotations に委ねる（既存作法どおり）
     - _Requirements: 1.1, 8.2, 8.3_
 
-- [ ] 3. 投入サービス `IPrintQueueService` とDI登録
-  - [ ] 3.1 `IPrintQueueService` / `PrintQueueService` を実装
+- [x] 3. 投入サービス `IPrintQueueService` とDI登録
+  - [x] 3.1 `IPrintQueueService` / `PrintQueueService` を実装
     - `CommonModule/Services/` に `IPrintQueueService`（`EnqueueAsync`）と `internal` 実装 `PrintQueueService` を作成（`ISmtpQueueService`/`SmtpQueueService` と同作法）
     - `print_status=1` で 1 件 INSERT。`created_at == updated_at = DateTime.UtcNow`。`t_print_queue` のみ操作し `t_order_reports` にアクセスしない
     - 必須項目（`module`/`reportType`/`referenceCode`）が空白のみなら `ArgumentException`。`printPayload` と `pdfPath` が両方空白のみなら `ArgumentException`。`copies` は 1 未満なら 1 に正規化
@@ -65,7 +65,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - **Validates: Requirements 4.2, 4.3**
     - 必須欠落 または payload・pdf_path 両方空白の入力で `ArgumentException`・テーブル不変を検証。`// Feature: print-platform, Property 2` タグ、100イテレーション以上
 
-  - [ ] 3.4 `AddCommonModule` に DI 登録を追加
+  - [x] 3.4 `AddCommonModule` に DI 登録を追加
     - `CommonModule/Extensions/CommonModuleExtensions.cs`（`AddCommonModule`）に `services.AddScoped<IPrintQueueService, PrintQueueService>()` を追加（`ISmtpQueueService` と対・Scoped）
     - `CommonDbContext` 登録・接続文字列 "CommonDb" は既存のまま（MainWeb は変更しない）
     - _Requirements: 4.1, 12.1, 12.2_
