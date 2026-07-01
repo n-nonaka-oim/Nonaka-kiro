@@ -71,7 +71,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - _Requirements: 4.1, 12.1, 12.2_
 
 - [ ] 4. 共通監視画面 `Common_PrintMonitor`（`/Common/PrintMonitor`）
-  - [ ] 4.1 一覧・フィルタ・サマリの PageModel を実装
+  - [x] 4.1 一覧・フィルタ・サマリの PageModel を実装
     - `CommonModule/Areas/Common/Pages/PrintMonitor/Index.cshtml.cs` に `[Authorize(Policy = "DbPermissionCheck")]` を付与し `CommonDbContext` を直接注入
     - 一覧: module/report_type/reference_code/print_status/copies/picked_at/printed_at/error_message/created_at/updated_at（pdf_path 有無アイコン）。`Id` 降順・ページング（既定30件、選択肢 10/20/30/50/100）
     - フィルタ: print_status・report_type・キーワード（reference_code 部分一致）・作成日付範囲（JST入力→UTC境界変換、SmtpMonitor と同方式）。サマリ: print_status 別件数（待機1/処理中2/完了3/エラー9）を全件ベースで集計
@@ -87,7 +87,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - **Validates: Requirements 9.3**
     - ジョブ集合を生成し、各 status 件数が母集合の該当行数と一致し合計が status∈{1,2,3,9} 行数に一致することを検証。`// Feature: print-platform, Property 5` タグ、100イテレーション以上
 
-  - [ ] 4.4 死活判定を実装
+  - [x] 4.4 死活判定を実装
     - `m_print_agent_control` の最終 heartbeat が 30 秒以内なら「ポーリング中」、超過（または null）なら「応答なし」。`HeartbeatAliveSeconds = 30`（SmtpMonitor と同値・同ロジック）。マシン名・最終応答時刻(JST)を表示
     - _Requirements: 9.6_
 
