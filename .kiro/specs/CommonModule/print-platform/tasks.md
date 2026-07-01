@@ -70,7 +70,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - `CommonDbContext` 登録・接続文字列 "CommonDb" は既存のまま（MainWeb は変更しない）
     - _Requirements: 4.1, 12.1, 12.2_
 
-- [ ] 4. 共通監視画面 `Common_PrintMonitor`（`/Common/PrintMonitor`）
+- [x] 4. 共通監視画面 `Common_PrintMonitor`（`/Common/PrintMonitor`）
   - [x] 4.1 一覧・フィルタ・サマリの PageModel を実装
     - `CommonModule/Areas/Common/Pages/PrintMonitor/Index.cshtml.cs` に `[Authorize(Policy = "DbPermissionCheck")]` を付与し `CommonDbContext` を直接注入
     - 一覧: module/report_type/reference_code/print_status/copies/picked_at/printed_at/error_message/created_at/updated_at（pdf_path 有無アイコン）。`Id` 降順・ページング（既定30件、選択肢 10/20/30/50/100）
@@ -96,7 +96,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - **Validates: Requirements 9.6**
     - 経過時間（負・0〜数分・境界30秒ちょうど・null）を生成し、Alive 判定が `経過<=30秒` と同値・null は「応答なし」を検証。`// Feature: print-platform, Property 6` タグ、100イテレーション以上
 
-  - [ ] 4.6 再出力 `OnPostReprintAsync` を実装
+  - [x] 4.6 再出力 `OnPostReprintAsync` を実装
     - 完了(3)・エラー(9) かつ（`print_payload` または `pdf_path` の一方が非空）のジョブのみ `print_status=1` に戻し、`picked_at`/`printed_at`/`error_message` をクリア、`updated_at=UtcNow`
     - 待機(1)・処理中(2)・対象外(0) は不正遷移として拒否し通知。payload・pdf_path ともに無しは「印刷ソースが無いため再出力できない」旨を通知
     - `DbUpdateConcurrencyException` を捕捉し「他のユーザーが先に更新しました。画面を再読み込みしてください。」を通知
@@ -107,7 +107,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - **Validates: Requirements 9.4, 9.5**
     - print_status∈{0,1,2,3,9}×payload/pdf_path 有無を生成し、3/9 かつ出力ソース有りのみ 1 へ遷移＋クリア、他は不変を検証。`// Feature: print-platform, Property 3` タグ、100イテレーション以上
 
-  - [ ] 4.8 監視画面ビュー `Index.cshtml` を実装
+  - [x] 4.8 監視画面ビュー `Index.cshtml` を実装
     - Area "Common" 共通スタイル（Bootstrap 5 + vanilla JS、site.css は変更しない）で一覧・フィルタ・サマリ・死活表示・再出力操作・error_message 表示を描画（`Common_SmtpMonitor` と一貫）
     - _Requirements: 9.1, 9.6, 9.7, 10.1_
 
