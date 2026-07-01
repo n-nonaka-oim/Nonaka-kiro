@@ -19,7 +19,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 ## Tasks
 
 - [ ] 1. DBスキーマDDLとドキュメントの整備（共通DB `db_common_dev`）
-  - [ ] 1.1 `t_print_queue`・`m_print_agent_control` の CREATE TABLE DDL を作成
+  - [x] 1.1 `t_print_queue`・`m_print_agent_control` の CREATE TABLE DDL を作成
     - `CommonModule/docs/sql/` に 2 テーブルの CREATE TABLE スクリプトを作成
     - `t_print_queue`: id(IDENTITY,PK)/module(NOT NULL)/report_type(NOT NULL)/reference_code(NOT NULL)/output_type(NOT NULL)/print_status(NOT NULL,既定1)/print_payload(nvarchar(max))/pdf_path(nvarchar(500))/printer_name(nvarchar(200))/copies(NOT NULL,既定1)/picked_at/printed_at/error_message(nvarchar(500))/created_at(NOT NULL)/updated_at(NOT NULL)/row_version(rowversion)。fax_status 列は持たせない
     - インデックス `IX_t_print_queue_status_created (print_status, created_at)`・`IX_t_print_queue_reference_code (reference_code)`・`IX_t_print_queue_module (module)` を含める
@@ -27,23 +27,23 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う」旨をコメントで明記
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 3.1, 3.3, 6.1_
 
-  - [ ] 1.2 テーブル定義書・ER図を更新
+  - [x] 1.2 テーブル定義書・ER図を更新
     - `.kiro/docs/db/テーブル定義書.md` に `t_print_queue`・`m_print_agent_control` の列名・日本語名・型・備考を追記
     - `.kiro/docs/db/ER図.md` に 2 テーブルと `t_smtp_queue`／`m_smtp_agent_control` との対（共通DB配置）を追記
     - _Requirements: 1.1, 6.1_
 
-- [ ] 2. CommonModule 共通エンティティと DbContext
-  - [ ] 2.1 エンティティ `TPrintQueue` を実装
+- [x] 2. CommonModule 共通エンティティと DbContext
+  - [x] 2.1 エンティティ `TPrintQueue` を実装
     - `CommonModule/Data/Entities/TPrintQueue.cs` を `TSmtpQueue` と同じ DataAnnotations 作法で実装（`[Table("t_print_queue")]`/`[Column]`/`[Key]`/`[DatabaseGenerated(Identity)]`/`[MaxLength]`）
     - design「Data Models」章の 16 列に一致（`module`・`pdf_path`・`printer_name` を含む）。`RowVersion` に `[Timestamp]`（`row_version`）
     - _Requirements: 1.2, 1.5, 1.6, 2.1_
 
-  - [ ] 2.2 エンティティ `MPrintAgentControl` を実装
+  - [x] 2.2 エンティティ `MPrintAgentControl` を実装
     - `CommonModule/Data/Entities/MPrintAgentControl.cs` を `MSmtpAgentControl` と対の 1行運用で実装（`last_heartbeat_at`(UTC)・`machine_name`・`updated_at`）
     - `row_version` は付与しない（パリティ＝ルールの明示的例外）
     - _Requirements: 6.1, 6.2, 6.4_
 
-  - [ ] 2.3 `CommonDbContext` に DbSet を追加
+  - [x] 2.3 `CommonDbContext` に DbSet を追加
     - `CommonModule/Data/CommonDbContext.cs` に `DbSet<TPrintQueue> PrintQueue` と `DbSet<MPrintAgentControl> PrintAgentControls` を追加
     - OnModelCreating は実装せずマッピングはエンティティ側 DataAnnotations に委ねる（既存作法どおり）
     - _Requirements: 1.1, 8.2, 8.3_

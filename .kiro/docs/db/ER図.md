@@ -63,6 +63,35 @@ erDiagram
 
 ---
 
+## 共通DB（db_common_dev）— 共通プリント基盤（print-platform）
+
+DB: `db_common_dev` / Server: `OJIADM23120073\DEVELOPMENT`
+
+全社共通のプリント送信汎用基盤(print-platform)が使用する2テーブル。上記 SMTP送信汎用基盤(`t_smtp_queue`/`m_smtp_agent_control`) と**対の共通基盤**として資材固有DBではなく共通DB(`db_common_dev`)に配置する。各業務モジュール(Producer)が共通印刷キュー(`t_print_queue`)へジョブを投入し、Worker(PrintAgent)がポーリングして印刷する。`reference_code` は発注番号等の参照キー（論理参照・FK制約なし）。死活監視(`m_print_agent_control`)は他テーブルと直接のリレーションを持たない独立テーブル。
+
+```mermaid
+erDiagram
+    t_print_queue {
+        int id PK
+        nvarchar module
+        nvarchar reference_code
+    }
+    m_print_agent_control {
+        int id PK
+    }
+```
+
+### リレーション一覧（論理参照・FK制約なし・コード参照）
+
+| テーブル | 参照先 | 参照列 | 備考 |
+|---------|--------|--------|------|
+| t_print_queue | （各業務モジュールの発注等） | reference_code | 発注番号等への論理参照（FK制約なし・コード参照）。PDF直接印刷/payload生成のデュアルモードで印刷 |
+
+> `t_print_queue` は全モジュール横断の共通印刷キュー。`t_smtp_queue`（FAX/メール送信）と対の共通基盤で、FK制約は持たず `reference_code`（発注番号等）で発生元を参照する。FAX関連列は持たない。
+> `m_print_agent_control` は PrintAgent(Worker) の死活監視（heartbeat）専用の1行運用テーブルで、他テーブルとリレーションを持たない（独立）。`m_smtp_agent_control` と対。
+
+---
+
 ## リレーション一覧
 
 ### マスタ間
@@ -160,3 +189,10 @@ erDiagram
 | t_smtp_queue | 共通送信キュー | トランザクション | 全モジュール横断のSMTP送信ジョブ。1レコード=1送信ジョブ |
 | m_smtp_config | 接続プロファイルマスタ（複数行） | マスタ | SMTP接続先設定。config_key で t_smtp_queue から参照 |
 | m_smtp_agent_control | SmtpAgent死活監視 | マスタ | 送信Worker生存状態(heartbeat)表示（独立・リレーションなし） |
+
+## 共通DB（db_common_dev）テーブル分類 — 共通プリント基盤
+
+| テーブル名 | 日本語名 | 区分 | 主用途 |
+|-----------|----------|------|--------|
+| t_print_queue | 共通印刷キュー | トランザクション | 全モジュール横断の印刷ジョブ。1レコード=1印刷ジョブ。FAX列なし。`t_smtp_queue` と対 |
+| m_print_agent_control | PrintAgent死活監視 | マスタ | 印刷Worker生存状態(heartbeat)表示（独立・リレーションなし）。`m_smtp_agent_control` と対 |
