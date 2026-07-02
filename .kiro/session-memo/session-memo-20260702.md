@@ -486,3 +486,41 @@
 - print-platform：実装/テスト/実機確認 完了。dispatch-monitoring-consolidation：requirements/design/tasks 揃い＝**実装着手可**。
 - 実装は最小単位で1つずつ（wave順）: **1.1 MPrintOutputPath エンティティ+DbSet** から。
 - 未コミット: tasks.md・session-memo。
+
+---
+
+## 🔴 チェックポイント（コンテキスト80%超・new-session ハンドオフ用）
+
+### 現在地（2026/07/02 時点）
+- **print-platform（共通印刷基盤）: 完了**。実装・PBT(16緑/1skip)・ドキュメント・退役クリーンアップ・実機表示確認(/Common/PrintMonitor)まで済み・全コミット済み。db_common_dev に DDL 適用済み（t_print_queue / m_print_agent_control）。
+- **dispatch-monitoring-consolidation（MaterialModule・投入側）: requirements/design/tasks 3点揃い・全コミット済み・実装未着手**。
+  - 直近コミット: design `f37a21a` / tasks `34b2a2e`（Nonaka repo）。未コミットなし。
+
+### 次に行う1アクション
+- **タスク 1.1「`MPrintOutputPath` エンティティ追加＋`MaterialDbContext` に DbSet 追加」** から着手（wave0）。
+  - `MaterialModule/Data/Entities/MPrintOutputPath.cs` 新規（`[Table("m_print_output_path")]`・Id/BasePath[Required,MaxLength500]/Description/IsActive/RowVersion[Timestamp]/CreatedAt/UpdatedAt・監査 created_by/updated_by は持たない＝MaterialModule規約）。
+  - `MaterialDbContext` に `DbSet<MPrintOutputPath> PrintOutputPaths` 追加。
+  - 参照: `.kiro/specs/MaterialModule/dispatch-monitoring-consolidation/design.md`「Data Models / エンティティ MPrintOutputPath」。
+
+### 実装 wave 順（tasks.md）
+- 0: 1.1 entity+DbSet / 1.2 DDL+シードSQL(MaterialModule/docs/sql・db_material_dev・base_path 既定 \\ojiadm23120073\app_share\PrintAgent) / 1.3 テーブル定義書・ER図
+- 1: 2.1 IPrintOutputPathService/PrintOutputPathService+DI(AddMaterialModule)＋純関数 BuildFullPath
+- 2: 2.2* 例示 / 3.1 純関数 ExtractGroupKey・BuildPdfFileName（PrintJobService内 internal static）
+- 3: 3.2 CreateOrderApprovalJobsAsync 改修（OrderPdfService再利用でPDF生成→保存→IPrintQueueService.EnqueueAsync 投入。t_order_reports非書込・fax_status非設定・print_payload廃止。IPrintJobService シグネチャ維持）
+- 4: CP（ビルド/テスト＝ユーザー）
+- 5: 5.1 Material_SmtpMonitor 削除+fax_status/fax_at/fax_error_message 撤去 / 5.2 Material_PrintMonitor 削除+print_status/PrintPayload/PrintAgentControls 撤去 / 6.1 導線解除SQL(dbAuthTest m_content/r_content_auth・Material SmtpMonitor/Index・PrintMonitor/Index)
+- 6→: 7.1*-7.5* テスト(Property1〜3+例示+統合・MaterialModule.Tests・xUnit+FsCheck.Xunit・≥100) → 8 CP → 9.1 カットオーバー協調ノート
+
+### 重要な決定・制約（再掲）
+- 投入=**IPrintQueueService.EnqueueAsync 経由**（既存 MaterialModule→CommonModule ProjectReference 利用・MainWeb 不変更）。PDF=**OrderPdfService.GenerateGroupOrderPdfAsync 再利用**（PrintAgent旧Documentsは退役・移植不要）。
+- **キュー印刷対象=order_approval のみ**（receiving_slip/factory_invoice はDL方式のまま・確定）。
+- 保存先=**m_print_output_path マスタ**(db_material_dev・is_active・実行時取得でコード変更なし変更可・現行値シード)。pdf_path=Path.Combine(base_path, `{reportType}_{referenceCode}_{yyyyMMddHHmmssfff}.pdf`)。
+- 導線=**m_content 解除SQL**（Auth DB・ユーザー実行）。TOrderReport/t_order_reports は参照除去のみ・削除しない。
+- パスは小文字 `ojiadm23120073`。1ターン=1タスクで区切る。長時間処理は分割。ビルド/テスト/DDL/実印刷/SQL実行はユーザー側。MainWeb/SharedCore/AuthModule 変更不可。
+
+### PDFサイレント印刷テスト（ユーザー・開発環境）
+- 段階1（今でも可）: 手動で t_print_queue に1行 INSERT（pdf_path=共有パスの実在PDF・print_status=1・output_type=1）→ PrintAgent(db_common_dev向け・SumatraPDF・開発プリンタ・SkipPrint=false)で印刷専用パス検証。
+- 段階2: 承認→PDF生成→投入→印刷の一連（本spec R8/R4 実装後）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260702）。次アクション＝タスク1.1。
