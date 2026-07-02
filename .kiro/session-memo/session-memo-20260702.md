@@ -411,3 +411,55 @@
 - requirements 整合済み → **design 生成**（要点: 投入経路＝IPrintQueueservice 経由/直接どちらか・PDF生成サービス設計（QuestPDF レイアウト3種の MaterialModule 移設）・保存先パスマスタのテーブル/DB配置（db_material_dev想定・要design判断）・命名/保存規則・旧Material_SmtpMonitor/PrintMonitor廃止と導線・カットオーバー協調）。
 - その後 tasks → 実装 → カットオーバー。
 - 未コミット: requirements.md・session-memo。
+
+---
+
+## メモ：PDFサイレント出力テスト方針＋design 着手
+
+- コミット済み: requirements 整合（Nonaka `3d7f1b6`）。未コミットなし。
+- **サイレント出力テスト**: 開発環境の PrintAgent＋開発環境プリンタ設定で実施予定（ユーザー）。段階1（手動 t_print_queue INSERT→PrintAgent 印刷専用パス検証）は DDL適用済みのため PrintAgent 再デプロイ＋SumatraPDF/プリンタ設定＋SkipPrint=false で今でも可能。段階2（承認→PDF生成→投入→印刷）は本spec R8/R4 実装後。
+- **design 生成の論点**:
+  - 投入経路: MaterialModule は既に CommonModule 参照済み（order-approval-fax-mail で ISmtpQueueService 利用）→ **IPrintQueueService 経由**が有力。
+  - PDF生成: MaterialModule に既存 `OrderPdfService.GenerateGroupOrderPdfAsync`（発注書兼納入依頼書・QuestPDF）が有るはず→**既存資産の再利用**を優先検討（PrintAgent の旧 Documents は重複だった）。工場入れ請求／入庫伝票の生成有無を確認。
+  - 保存先パスマスタ: テーブル/DB配置（db_material_dev 想定）・ファイル名規則（reference_code ベース）・保存後 pdf_path 投入。
+  - 旧 Material_SmtpMonitor／Material_PrintMonitor 廃止・導線更新。カットオーバー協調（print-platform 手順）。
+- 次: design.md 生成 → tasks → 実装 → カットオーバー。
+
+---
+
+## dispatch-monitoring-consolidation design.md 生成完了（IDE生成→上書き解決・診断クリア）
+
+- 「design.md 保存できませんでした（内容が新しい）」→ ユーザーが**上書き**選択で解決。生成された design は最終契約と完全整合の完成版。
+- 内容: Overview/Architecture(FAX投入とのパリティ表・承認→印刷 Mermaid)/Components(PrintJobService改修・OrderPdfService再利用・**IPrintOutputPathService新規**・旧Monitor2画面廃止・m_content導線解除)/Data Models(**m_print_output_path**@db_material_dev・MPrintOutputPath・ファイル名規則・t_print_queue投入列対応)/Correctness Properties 1〜3(PBT・MaterialModule.Tests)/Error Handling/Testing/カットオーバー協調(③投入先切替所有)/排他制御/Open Decisions/実装最小単位9。診断クリア。
+- 主要設計判断: 投入=**IPrintQueueService経由**（既存CommonModule参照・MainWeb変更不要）／PDF=**OrderPdfService再利用**（PrintAgent旧Documentsは重複・移植不要）／**キュー印刷対象=order_approdval のみ**（receiving/factory はDL方式・キュー非経由）／保存先=**m_print_output_path マスタ**（is_active・現行値シード・実行時取得でコード変更なし変更可）／導線=**m_content解除SQL**（Auth DB・ユーザー実行・MainWeb不変更）。
+
+### Open Decisions（tasks前に確認・既定案）
+1. キュー印刷対象＝order_approval のみ（receiving_slip/factory_invoice はDL方式のまま）。
+2. TOrderReport/t_order_reports は参照除去のみ・削除しない（print-platform 移行/保全依存）。
+3. 印刷出力パスマスタ編集UIはスコープ外（DB直更新/シード）。
+
+### 次
+- 上記3点ユーザー確認 → tasks 生成 → 実装（最小単位9）→ カットオーバー協調。
+- 未コミット: design.md（IDE生成・未コミット）・session-memo。
+
+---
+
+## dispatch-monitoring-consolidation design 作成完了（診断クリア）
+
+- 開発環境PrintAgentで dev プリンタ設定によるサイレント出力テスト予定（ユーザー）。PDFサイレントテストの段階: ①PrintAgent単体（手動INSERT・今すぐ可）②業務フロー全体（本spec R8/R4 実装後）。
+- design 主要決定:
+  - 投入経路＝`IPrintQueueService.EnqueueAsync`（既存 CommonModule 参照・SMTPパリティ）。t_order_reports 非書込・fax_status/print_payload 非使用。
+  - PDF生成＝既存 `OrderPdfService.GenerateGroupOrderPdfAsync` 再利用（**3帳票とも MaterialModule に既存**・PrintAgent移植不要）。キュー投入対象は order_approval のみ（receiving_slip/factory_invoice は現状オンデマンドDL）。
+  - パスマスタ＝db_material_dev 新設 `m_print_output_path`（base_path/description/is_active/row_version/created_at/updated_at・監査created_by等なし）。`IPrintOutputPathService.GetBasePathAsync`（無キャッシュ・既定 `\\ojiadm23120073\app_share\PrintAgent`）。pdf_path=Path.Combine(base_path, fileName)。fileName=`{reportType}_{referenceCode}_{yyyyMMddHHmmssfff}.pdf`。
+  - 旧 Material_SmtpMonitor/PrintMonitor 削除＋fax_status/print_status/print_payload 参照除去。導線＝dbAuthTest.m_content 駆動 → 解除SQL（ユーザー実行）で /Common/* へ。
+  - Property 1〜3（PBT・MaterialModule.Tests）。カットオーバー③投入先切替のみ所有（print-platform R11 参照）。row_version 排他。MainWeb/AuthModule 不変。
+- 実装最小単位9項目を design 内に明記（tasks 指針）。
+
+### Open Decisions（tasks前に確認）
+1. **キュー印刷対象=order_approval のみ**（receiving_slip/factory_invoice はオンデマンドDLのまま）でよいか。
+2. TOrderReport/t_order_reports は参照除去に留め削除しない（保全）。
+3. パスマスタ編集UIはスコープ外（DB直/シード運用）。
+
+### 次
+- design 合意 → tasks 生成（最小単位9）→ 実装（1つずつ）。
+- 未コミット: design.md・.config.kiro・session-memo。
