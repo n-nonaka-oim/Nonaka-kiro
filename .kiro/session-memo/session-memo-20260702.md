@@ -463,3 +463,26 @@
 ### 次
 - design 合意 → tasks 生成（最小単位9）→ 実装（1つずつ）。
 - 未コミット: design.md・.config.kiro・session-memo。
+
+---
+
+## dispatch-monitoring-consolidation tasks.md 生成完了（3フェーズ揃い）
+
+- design コミット: Nonaka `f37a21a`。
+- tasks.md（診断クリア・16リーフ/7ウェーブ）:
+  - 1. パスマスタ基盤（1.1 MPrintOutputPath+DbSet／1.2 DDL+シードSQL／1.3 テーブル定義書・ER図）
+  - 2. IPrintOutputPathService（2.1 実装+DI／2.2* BuildFullPath例示）
+  - 3. PrintJobService改修（3.1 純関数 ExtractGroupKey/BuildPdfFileName／3.2 CreateOrderApprovalJobsAsync 投入先変更）
+  - 4. CP（非任意ゲート）
+  - 5. 旧画面廃止（5.1 SmtpMonitor削除+fax_status撤去／5.2 PrintMonitor削除+print_status/PrintPayload撤去）
+  - 6. 導線解除SQL（6.1 dbAuthTest m_content/r_content_auth）
+  - 7. テスト（7.1* P1／7.2* P2／7.3* P3／7.4* 例示／7.5* 統合）
+  - 8. CP（非任意ゲート）
+  - 9. カットオーバー協調（9.1 doc/spec-sync）
+  - Wave: 0[1.1,1.2,1.3]→1[2.1]→2[2.2,3.1]→3[3.2]→4[5.1,5.2,6.1]→5[7.x]→6[9.1]。
+- 制約明記: MaterialModule 限定（+既存CommonModule参照）・MainWeb/AuthModule不変更・投入=IPrintQueueService経由・IPrintJobService シグネチャ維持・DDL/テスト/実印刷/m_content SQLはユーザー側。
+
+### 現況・次
+- print-platform：実装/テスト/実機確認 完了。dispatch-monitoring-consolidation：requirements/design/tasks 揃い＝**実装着手可**。
+- 実装は最小単位で1つずつ（wave順）: **1.1 MPrintOutputPath エンティティ+DbSet** から。
+- 未コミット: tasks.md・session-memo。
