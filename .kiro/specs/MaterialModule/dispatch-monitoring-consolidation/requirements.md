@@ -8,8 +8,9 @@
 
 1. **二重FAXの根絶**: 発注承認時に旧FAX経路（`t_order_reports.fax_status`）と新FAX経路（`t_smtp_queue`）の双方にFAX用レコードが生成されている状態を解消し、FAXジョブを新経路（`t_smtp_queue`）へ一本化する。
 2. **FAX監視の集約**: `t_order_reports.fax_status` を表示する旧FAX監視画面（Material_SmtpMonitor）を廃止し、FAX監視を CommonModule の Common_SmtpMonitor（`t_smtp_queue` ベース）へ集約する。
-3. **PrintJobService の投入先変更（投入側実装）**: 承認済み発注の印刷ジョブを `t_order_reports` ではなく共通プリント基盤の共通キュー `t_print_queue` へ投入する。投入先のスキーマ契約・カットオーバー手順は `print-platform` に従う。
-4. **旧 Material_PrintMonitor の廃止／導線更新**: Material 側の印刷監視画面（Material_PrintMonitor）を廃止し、導線を共通プリント基盤が設置する Common_PrintMonitor へ更新する。
+3. **PrintJobService の投入先変更（投入側実装）**: 承認済み発注の印刷ジョブについて、PrintJobService が印刷対象 PDF を生成・保存し、そのフルパス（`pdf_path`、必須）を付与して共通プリント基盤の共通キュー `t_print_queue`（db_common_dev）へ投入する（従来の `t_order_reports` へは生成しない）。投入先のスキーマ契約（`pdf_path` 必須・`print_payload` は持たない）・カットオーバー手順は `print-platform` に従う。
+4. **PDF生成責務の移管（PrintAgent → MaterialModule）**: 従来 PrintAgent が担っていた帳票（発注書兼納入依頼書・工場入れ請求・入庫伝票 の3種）の QuestPDF レイアウト生成を送信側（MaterialModule）へ移管する。PrintAgent は印刷専用（`pdf_path` の生成済み PDF をサイレント印刷）となり、印刷イメージ（PDF）の生成は MaterialModule の責務とする。
+5. **旧 Material_PrintMonitor の廃止／導線更新**: Material 側の印刷監視画面（Material_PrintMonitor）を廃止し、導線を共通プリント基盤が設置する Common_PrintMonitor へ更新する。
 
 本 spec は **要件定義のみ** を対象とし、実装・コード変更は含まない。
 
@@ -18,7 +19,7 @@
 本 spec は別 spec `print-platform`（共通プリント基盤）に依存する。以下は `print-platform` が **契約の発生元（所有者）** であり、本 spec は重複する受入基準を持たず、依存としてのみ参照する。
 
 - **`t_print_queue` のスキーマ契約・DDL・既存データ移行**: `print-platform` Requirement 1〜3 が所有する。本 spec の PrintJobService 投入先（Requirement 4）は当該スキーマ契約に準拠する。
-- **PrintJobService の投入インターフェース契約**（投入先・PrintStatus 初期値・PrintPayload 付与）: `print-platform` Requirement 4 が定義する。本 spec は当該契約に従って投入側を実装する範囲を所有する。
+- **PrintJobService の投入インターフェース契約**（投入先・PrintStatus 初期値・`pdf_path` 付与（必須））: `print-platform` Requirement 4 が定義する。本 spec は当該契約に従って投入側を実装する範囲を所有する。なお、印刷イメージ（PDF）の生成そのものは `print-platform` の所有ではなく、本 spec（MaterialModule）の責務である（`print-platform` は生成済み PDF のパス受け渡し契約のみを所有）。
 - **PrintAgent の読取先変更**: `print-platform` Requirement 5 が所有する。本 spec は対象外とする。
 - **Common_PrintMonitor（`/Common/PrintMonitor`）の設置・実装**: `print-platform` Requirement 8〜10 が所有する。本 spec は導線の更新先として参照するのみとする。
 - **カットオーバー（移行手順・切替順序）**: `print-platform` Requirement 11 が所有する。本 spec の投入先切替は、当該カットオーバー手順の一部として `print-platform` の手順に従う。
@@ -31,12 +32,11 @@
 - 印刷ジョブの正本キュー切替に関するカットオーバー手順・切替順序の定義（→ `print-platform` 所有）。
 - MainWeb・AuthModule への変更（参照のみ。プラットフォーム登録は当該プラットフォームモジュール側 spec が所有）。
 - SmtpAgent（Worker Service）本体のロジック改修（前提として参照する）。
-- 帳票レイアウト・PDF生成ロジックの変更。
 - 実DDL適用・ビルド・テスト・実送信・実印刷（いずれもユーザー側で実施）。
 
 ## Glossary
 
-- **PrintJobService**: `MaterialModule/Services/PrintJobService.cs`。承認済み発注を発注番号グループ単位で束ね、印刷ジョブ（PrintPayload付き）を生成する資材モジュールのサービス。本 spec の対象として、印刷ジョブを共通プリント基盤の `t_print_queue`（db_common_dev）へ投入する（現状は `t_order_reports` へ生成）。
+- **PrintJobService**: `MaterialModule/Services/PrintJobService.cs`。承認済み発注を発注番号グループ単位で束ね、対象帳票の印刷イメージ（PDF）を生成・保存し、そのフルパス（`pdf_path`）付きで印刷ジョブを共通プリント基盤の `t_print_queue`（db_common_dev）へ投入する資材モジュールのサービス（現状は `t_order_reports` へ生成）。帳票レイアウト（QuestPDF）の生成も本サービス側の責務とする。
 - **t_order_reports**: db_material_dev に存在する資材固有テーブル。従来は `print_status`（印刷状態）と `fax_status`（旧FAX状態）の両ステータスを保持する。本 spec では FAX 用レコードを生成せず、印刷ジョブの投入先としても使用しない。
 - **t_print_queue**: db_common_dev の共通テーブル。印刷ジョブのキュー。スキーマ契約・DDL・移行は `print-platform` が所有する。本 spec は PrintJobService の投入先として当該契約に準拠して参照する。
 - **t_smtp_queue**: db_common_dev に存在する共通テーブル。新FAX/メール送信ジョブのキュー。order-approval-fax-mail 機能が投入し、SmtpAgent が処理する。
@@ -51,7 +51,8 @@
 - **PrintStatus**: 印刷状態。0=対象外, 1=待機, 2=処理中, 3=完了, 9=エラー。
 - **FaxStatus**: `t_order_reports.fax_status`。0=FAX対象外, 1=待機, 2=処理中, 3=完了, 9=エラー（旧経路）。
 - **OutputType**: 発注の出力区分。FAX対象判定（値 2 または 3）に使用される。
-- **PrintPayload**: 印刷用 JSON。印刷ジョブに付与される入力データ。
+- **pdf_path**: `t_print_queue` の列。投入側（MaterialModule）が生成・保存した印刷対象 PDF のフルパス。必須（NOT NULL）であり、PrintAgent の唯一の印刷ソースである（旧 PrintPayload（印刷用 JSON）は `print-platform` の契約改訂で廃止）。
+- **印刷出力パスマスタ**: 印刷出力（PDF）の保存先ベースパスを保持する DB 管理のマスタ（設定／マスタテーブル）。コード変更なしに保存先を変更可能とする（現行値 `\\ojiadm23120073\app_share\PrintAgent`、将来のクラウド移行時はマスタ値の変更で対応）。Web 側（書込）と PrintAgent（読取）の双方から到達可能なパスを保持する。テーブル・DB 配置は設計フェーズで決定する。
 - **MaterialDbContext**: db_material_dev に接続する資材モジュールの DbContext。
 - **CommonDbContext**: db_common_dev に接続する CommonModule の DbContext。
 - **DbPermissionCheck**: DB権限ベースの認可ポリシー（`[Authorize(Policy = "DbPermissionCheck")]`）。
@@ -98,16 +99,16 @@
 
 ### Requirement 4: PrintJobService の投入先変更
 
-**User Story:** 発注業務担当者として、承認済み発注の印刷ジョブが共通プリント基盤の共通キュー（`t_print_queue`）に投入されてほしい。そうすれば印刷監視と処理が共通基盤上で完結する。
+**User Story:** 発注業務担当者として、承認済み発注の印刷ジョブが、印刷対象 PDF のフルパス（`pdf_path`）付きで共通プリント基盤の共通キュー（`t_print_queue`）に投入されてほしい。そうすれば印刷監視と処理が共通基盤上で完結する。
 
 #### Acceptance Criteria
 
 1. THE PrintJobService SHALL 印刷ジョブを `t_print_queue`（db_common_dev）に投入する。
-2. THE PrintJobService SHALL 印刷ジョブ投入時に PrintPayload（印刷用JSON）を付与する。
+2. THE PrintJobService SHALL 印刷ジョブ投入時に、生成・保存した印刷対象 PDF のフルパスを `pdf_path`（必須・非空）として付与する。
 3. THE PrintJobService SHALL 投入する印刷ジョブの PrintStatus を 1（待機）に設定する。
 4. THE PrintJobService SHALL 印刷ジョブを `t_order_reports` に新規生成しない。
-5. THE PrintJobService の投入 SHALL `print-platform` Requirement 4 で定義される投入インターフェース契約（投入先・PrintStatus 初期値・PrintPayload 付与）に準拠する。
-6. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス経由か直接アクセスか）SHALL 本 spec の設計フェーズで決定される。
+5. THE PrintJobService の投入 SHALL `print-platform` Requirement 4 で定義される投入インターフェース契約（投入先・PrintStatus 初期値・`pdf_path` 付与（必須）、`print_payload` は用いない）に準拠する。
+6. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス（IPrintQueueService 等）経由か直接アクセスか）SHALL 本 spec の設計フェーズで決定される。
 7. THE PrintJobService の投入先切替 SHALL `print-platform` Requirement 11 のカットオーバー手順に従って実施される。
 8. THE MainWeb SHALL 本変更により改変されない。
 
@@ -139,6 +140,30 @@
 
 1. THE 本spec由来の変更 SHALL MainWeb および AuthModule のソース・設定を変更しない。
 2. WHERE CommonModule のホスト登録（ModuleRegistration）変更が必要となる、THE システム SHALL 当該変更を CommonModule 側 spec の所有とし、本機能 spec から MainWeb へ変更を加えない。
-3. THE 本spec成果物 SHALL `.kiro/specs/dispatch-monitoring-consolidation/`（正本）と `MaterialModule/Doc/specs/dispatch-monitoring-consolidation/`（コピー）の2箇所に同一内容で配置される。
+3. THE 本spec成果物 SHALL `.kiro/specs/MaterialModule/dispatch-monitoring-consolidation/` に単一正本として配置される（モジュール別コピーは持たない）。
 4. THE 設計・実装 SHALL 基幹システム構築基準（`\\OJIADM23120073\Labs\sdoc\基幹システム構築基準.md`）に準拠する。
 5. THE 本 spec SHALL `print-platform` と重複する受入基準（`t_print_queue` スキーマ・PrintAgent 読取先・Common_PrintMonitor 実装・カットオーバー手順）を保持せず、依存として参照する。
+
+### Requirement 8: 印刷イメージ（PDF）生成の MaterialModule 所有
+
+**User Story:** 発注業務担当者として、印刷対象の PDF（印刷イメージ）が MaterialModule 側で生成・保存されてほしい。そうすれば PrintAgent は印刷専用となり、帳票レイアウトの変更が資材モジュール内で完結する。
+
+#### Acceptance Criteria
+
+1. THE MaterialModule SHALL 承認済み発注グループ単位で対象帳票の印刷イメージ（PDF）を生成する。
+2. THE MaterialModule SHALL 生成対象帳票として発注書兼納入依頼書・工場入れ請求・入庫伝票 の3種を含める。
+3. THE MaterialModule SHALL 生成した PDF を保存し、その保存先フルパスを `pdf_path` として `t_print_queue` へ投入する。
+4. THE MaterialModule SHALL 帳票レイアウト（従来 PrintAgent の Documents 相当の QuestPDF レイアウト）の生成を本 spec の責務として所有する。
+5. WHERE PrintAgent が `t_print_queue` の印刷ジョブを処理する、THE PrintAgent SHALL `pdf_path` の生成済み PDF をサイレント印刷し、PDF 生成を行わない（印刷専用、`print-platform` Requirement 5 所有）。
+
+### Requirement 9: PDF保存先パスのマスタ管理
+
+**User Story:** 運用管理者として、印刷出力（PDF）の保存先ベースパスを DB マスタで管理したい。そうすればオンプレからクラウドへの移行などでコード変更なしに保存先を変更できる。
+
+#### Acceptance Criteria
+
+1. THE MaterialModule SHALL 印刷出力（PDF）の保存先ベースパスを DB マスタ（印刷出力パスマスタ）で管理する。
+2. WHEN 印刷出力パスマスタの値が変更される、THE MaterialModule SHALL コード変更なしに変更後の保存先ベースパスを使用する。
+3. THE 印刷出力パスマスタ SHALL 現行の保存先ベースパス値として `\\ojiadm23120073\app_share\PrintAgent` を保持する。
+4. THE 印刷出力パスマスタが保持する保存先 SHALL Web 側（書込）と PrintAgent（読取）の双方から到達可能なパスである。
+5. THE 印刷出力パスマスタのテーブル定義・DB 配置 SHALL 本 spec の設計フェーズで決定される。

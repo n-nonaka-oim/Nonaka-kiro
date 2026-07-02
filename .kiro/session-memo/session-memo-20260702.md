@@ -389,3 +389,25 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260702）。
+
+---
+
+## dispatch-monitoring-consolidation 着手：requirements 整合更新（print-platform 最終契約へ）
+
+### ユーザー確定（3決定）
+1. PDF生成は送信側モジュール（MaterialModule）の責任＝印刷イメージ生成は送信側。
+2. PDF保存先パスは**マスタ管理**（現行 `\\ojiadm23120073\app_share\PrintAgent`・将来クラウド化はマスタ変更で対応）。
+3. requirements 整合更新から進める＝OK。
+
+### requirements.md 更新（診断クリア・単一正本 `.kiro/specs/MaterialModule/dispatch-monitoring-consolidation/`）
+- Introduction: 項3=PrintJobService が PDF 生成・保存→pdf_path 付きで t_print_queue 投入（PrintPayload 削除）。新項4=PDF生成責務の移管（PrintAgent→MaterialModule・3帳票 QuestPDF）。
+- 依存: 投入契約を pdf_path 付与（必須）に。PDF生成は print-platform 非所有＝本spec(MaterialModule)所有と明記。
+- Non-Goals: 「帳票レイアウト・PDF生成ロジックの変更」を除去（IN スコープ化）。
+- Glossary: PrintPayload→pdf_path、PrintJobService=PDF生成・保存、**印刷出力パスマスタ**追加。
+- R4: pdf_path 必須付与・print_payload 不使用。**新R8**=PDF生成のMaterialModule所有（3帳票・保存→pdf_path投入・レイアウト所有）。**新R9**=PDF保存先パスのマスタ管理（現行値・コード変更なし変更可・双方到達・配置は設計）。
+- R7.3: 2箇所配置→単一正本（コピー廃止）。
+
+### 次アクション
+- requirements 整合済み → **design 生成**（要点: 投入経路＝IPrintQueueservice 経由/直接どちらか・PDF生成サービス設計（QuestPDF レイアウト3種の MaterialModule 移設）・保存先パスマスタのテーブル/DB配置（db_material_dev想定・要design判断）・命名/保存規則・旧Material_SmtpMonitor/PrintMonitor廃止と導線・カットオーバー協調）。
+- その後 tasks → 実装 → カットオーバー。
+- 未コミット: requirements.md・session-memo。
