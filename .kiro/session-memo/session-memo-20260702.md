@@ -541,3 +541,15 @@
 - **1.3** `.kiro/docs/db/テーブル定義書.md`・`ER図.md` に `m_print_output_path` 追記（単独マスタ）。
 - その後 wave1: 2.1 IPrintOutputPathService。
 - 未コミット: Nonaka/.kiro（tasks 1.1・本memo）。
+
+---
+
+## タスク1.2・1.3 完了（wave0 完了＝親1完了）
+
+- **1.2** `MaterialModule/docs/sql/create_m_print_output_path.sql` 新規（db_material_dev・冪等）。CREATE TABLE `m_print_output_path`（id/base_path(nvarchar500)/description(nvarchar200 NULL)/is_active(bit default1)/row_version(rowversion)/created_at/updated_at(datetime2 default SYSUTCDATETIME)）＋シード（base_path=`\\ojiadm23120073\app_share\PrintAgent`・is_active=1・NOT EXISTS ガード）＋確認SELECT。兄弟 `create_t_order_dispatch_log.sql` 作法に統一。実適用はユーザー。
+- **1.3** `.kiro/docs/db/テーブル定義書.md`（マスタ22→23・詳細節 m_print_output_path 追加・db_material_dev グループ）／`.kiro/docs/db/ER図.md`（単独マスタ節＋mermaid erDiagram エンティティ・分類22→23）追記。診断クリア。
+- tasks 1.2/1.3＝[x]、**親1＝[x]（wave0 完了）**。task_update ツールは途中から不可→tasks.md チェックボックス直接編集を正とした。
+
+### 次（wave1）
+- **2.1** `IPrintOutputPathService`/`PrintOutputPathService` 実装＋DI（`AddMaterialModule` に Scoped 登録・純関数 `BuildFullPath` internal static 切り出し・有効行なし既定値フォールバック+LogWarning・無キャッシュ）。DemoModule パターン（public interface + internal 実装）。
+- 未コミット: MaterialModule（1.2 SQL）・Nonaka/.kiro（tasks 1.2/1.3・docs/db 2ファイル・本memo）。

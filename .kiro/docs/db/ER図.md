@@ -20,6 +20,25 @@ erDiagram
     m_bom_details ||--o| m_items : "item_id"
 ```
 
+## 印刷出力パスマスタ（単独マスタ）
+
+印刷出力(PDF)の保存先ベースパスを保持するマスタ `m_print_output_path`（`db_material_dev`）。他テーブルと直接のリレーション（FK）を持たない**単独マスタ**。MaterialModule(書込)が有効行(`is_active=1`)を参照して `pdf_path` を解決する。PrintAgent は参照しない。
+
+```mermaid
+erDiagram
+    m_print_output_path {
+        int id PK
+        nvarchar base_path
+        nvarchar description
+        bit is_active
+        rowversion row_version
+        datetime2 created_at
+        datetime2 updated_at
+    }
+```
+
+> `m_print_output_path` は保存先ベースパスを保持する単独マスタで、他テーブルとリレーションを持たない（独立）。
+
 ## トランザクション リレーション
 
 ```mermaid
@@ -138,7 +157,7 @@ erDiagram
 
 ## テーブル分類
 
-### マスタ（22テーブル）
+### マスタ（23テーブル）
 
 | テーブル名 | 日本語名 | 主用途 |
 |-----------|----------|--------|
@@ -164,6 +183,7 @@ erDiagram
 | m_print_agent_control | PrintAgent死活監視 | Worker生存状態(heartbeat)表示（独立・リレーションなし） |
 | m_smtp_config | SMTP/FAX送信設定 | メールtoFAX送信の接続設定（独立・リレーションなし） |
 | m_smtp_agent_control | SmtpAgent死活監視 | FAX送信Worker生存状態(heartbeat)表示（独立・リレーションなし） |
+| m_print_output_path | 印刷出力パスマスタ | 印刷出力(PDF)保存先ベースパス保持（独立・リレーションなし） |
 
 ### トランザクション（10テーブル）
 

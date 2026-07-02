@@ -19,21 +19,21 @@
 
 ## Tasks
 
-- [ ] 1. 印刷出力パスマスタのデータ基盤（エンティティ・DDL・ドキュメント）
+- [x] 1. 印刷出力パスマスタのデータ基盤（エンティティ・DDL・ドキュメント）
   - [x] 1.1 `MPrintOutputPath` エンティティ追加 + `MaterialDbContext` に `DbSet` 追加
     - `MaterialModule/Data/Entities/MPrintOutputPath.cs` を新規作成（`[Table("m_print_output_path")]`、`Id`/`BasePath`/`Description`/`IsActive`/`RowVersion`/`CreatedAt`/`UpdatedAt` を design.md「エンティティ `MPrintOutputPath`」の列対応どおりにマッピング）
     - `[Key]`＋`[DatabaseGenerated(DatabaseGeneratedOption.Identity)]`、`base_path` は `[Required]`＋`[MaxLength(500)]`、`row_version` は `[Timestamp]`（`byte[]`）
     - `MaterialDbContext` に `DbSet<MPrintOutputPath> PrintOutputPaths` を追加（1行の小改修）
     - _Requirements: 9.1, 9.5_
 
-  - [ ] 1.2 `m_print_output_path` DDL＋シード SQL を作成
+  - [x] 1.2 `m_print_output_path` DDL＋シード SQL を作成
     - `MaterialModule/docs/sql/` に DDL＋シード SQL を新規作成（対象 DB: db_material_dev）
     - 列: `id`(int IDENTITY PK)、`base_path`(nvarchar(500) NOT NULL)、`description`(nvarchar(200) NULL)、`is_active`(bit NOT NULL default 1)、`row_version`(rowversion)、`created_at`/`updated_at`(datetime2 NOT NULL)
     - シード: `base_path = '\\ojiadm23120073\app_share\PrintAgent'`, `is_active = 1`（`FaxDispatchOptions.PdfShareRoot` 既定値と一致）
     - 実適用はユーザー側（実行手順コメントを SQL 冒頭に付記）
     - _Requirements: 9.1, 9.3, 9.4_
 
-  - [ ] 1.3 DBドキュメントを更新
+  - [x] 1.3 DBドキュメントを更新
     - `.kiro/docs/db/テーブル定義書.md` に `m_print_output_path`（列名・日本語名・型・備考）を追記
     - `.kiro/docs/db/ER図.md` に `m_print_output_path` を追記（単独マスタ・他テーブルとの直接リレーションなし）
     - _Requirements: 9.1_
