@@ -23,7 +23,7 @@
 - PrintJobService（MaterialModule）の投入側実装の改修（本 spec はインターフェース契約のみ定義し、実装は `dispatch-monitoring-consolidation` が所有）。
 - MainWeb・AuthModule のソース・設定変更（参照のみ。プラットフォーム登録は CommonModule 側の所有とし、MainWeb への変更は最小限かつ別途ユーザー確認）。
 - FAX送信経路（`t_smtp_queue`）および Common_SmtpMonitor の改修（参照・整合確認のみ）。
-- 帳票レイアウト・PDF生成ロジックの変更。
+- 帳票レイアウト・印刷イメージ（PDF）生成ロジックの変更（PDF生成の実装は投入側＝MaterialModule／`dispatch-monitoring-consolidation` が所有。本 spec は生成済み PDF のパス受け渡し契約のみを所有）。
 - DDL の実適用、既存 `t_order_reports` 印刷データの実移行、ビルド・テスト・実印刷（いずれもユーザー側で実施）。
 
 ## Glossary
@@ -31,15 +31,15 @@
 - **Common_Print_Platform**: 本 spec が定義する共通プリント基盤。`t_print_queue`・PrintAgent・Common_PrintMonitor・カットオーバーを所有する。
 - **t_print_queue**: db_common_dev に新設する共通テーブル。印刷ジョブのキュー。`t_smtp_queue` と対の命名・思想で、印刷関連列のみを持ち FAX関連列を持たない。本 spec がスキーマ契約を所有する。
 - **t_smtp_queue**: db_common_dev に存在する共通テーブル。FAX/メール送信ジョブのキュー。本 spec では命名・思想の対比対象として参照する。
-- **t_order_reports**: db_material_dev に存在する資材固有テーブル。従来は印刷ジョブの正本キューとして `print_status`・`print_payload` 等を保持していた。`t_print_queue` の列設計の参考元であり、本 spec ではこのテーブルへの依存を排除する。
-- **PrintJobService**: `MaterialModule/Services/PrintJobService.cs`。承認済み発注を発注番号グループ単位で束ね、印刷ジョブ（PrintPayload付き）を生成する資材モジュールのサービス。本 spec では `t_print_queue` への投入元（Producer）として契約上のみ参照する（投入側実装は `dispatch-monitoring-consolidation` の所有）。
-- **PrintAgent**: 印刷ジョブを処理する Worker Service（別ソリューション・別 git リポジトリ: `\\OJIADM23120073\Labs\WindowsService\PrintAgent`、独自 Doc 体系）。`t_print_queue` をポーリングし PDF生成→サイレント印刷を行い、PrintStatus を遷移させる。
+- **t_order_reports**: db_material_dev に存在する資材固有テーブル。従来は印刷ジョブの正本キューとして `print_status` 等を保持していた。`t_print_queue` の列設計の参考元であり、本 spec ではこのテーブルへの依存を排除する。
+- **PrintJobService**: `MaterialModule/Services/PrintJobService.cs`。承認済み発注を発注番号グループ単位で束ね、印刷イメージ（PDF）を生成・保存して `pdf_path` 付きの印刷ジョブを投入する資材モジュールのサービス。本 spec では `t_print_queue` への投入元（Producer）として契約上のみ参照する（投入側実装および PDF生成実装は `dispatch-monitoring-consolidation` の所有）。
+- **PrintAgent**: 印刷ジョブを処理する Worker Service（別ソリューション・別 git リポジトリ: `\\ojiadm23120073\Labs\WindowsService\PrintAgent`、独自 Doc 体系）。`t_print_queue` をポーリングし `pdf_path` の生成済み PDF をサイレント印刷（**印刷専用**・PDF生成は行わない）し、PrintStatus を遷移させる。
 - **Common_PrintMonitor**: `CommonModule/Areas/Common/Pages/PrintMonitor`（`/Common/PrintMonitor`）。`t_print_queue` を CommonDbContext 経由で参照する印刷監視画面。
 - **Common_SmtpMonitor**: `CommonModule/Areas/Common/Pages/SmtpMonitor`（`/Common/SmtpMonitor`）。`t_smtp_queue` ベースのSMTP監視画面。Common_PrintMonitor の機能・スタイルの参照基準。
 - **m_print_agent_control**: db_common_dev に新設する PrintAgent 死活監視テーブル（1行運用）。PrintAgent がポーリング毎に `last_heartbeat_at`（UTC）・`machine_name` を更新する。`m_smtp_agent_control` と対の命名・思想。
 - **CommonDbContext**: db_common_dev に接続する CommonModule の DbContext。
 - **PrintStatus**: 印刷状態。0=対象外, 1=待機, 2=処理中, 3=完了, 9=エラー。
-- **PrintPayload**: 印刷用 JSON。PrintAgent が PDF を再生成して印刷するための入力データ。
+- **pdf_path**: `t_print_queue` の列。投入側（MaterialModule）が生成・保存した印刷対象 PDF のフルパス。必須（NOT NULL）であり、PrintAgent の唯一の印刷ソースである。（旧 PrintPayload（印刷用 JSON からの PDF 再生成）は本改訂で廃止）
 - **DbPermissionCheck**: DB権限ベースの認可ポリシー（`[Authorize(Policy = "DbPermissionCheck")]`）。
 - **RowVersion**: 楽観的ロック用の行バージョン列（`[Timestamp]` 属性に対応する `row_version` カラム）。
 - **カットオーバー**: 印刷ジョブの正本キューを `t_order_reports`（db_material_dev）から `t_print_queue`（db_common_dev）へ切り替える移行作業。投入先（PrintJobService）と読取先（PrintAgent）の切替を含む。
@@ -47,8 +47,8 @@
 ## 前提（Assumptions）
 
 - A1: `t_print_queue` の DDL 適用、`m_print_agent_control` の DDL 適用、および既存 `t_order_reports` 印刷データの `t_print_queue` への移行は、ユーザーが db_common_dev に対して実施する。
-- A2: PrintAgent は別ソリューション（`\\OJIADM23120073\Labs\WindowsService\PrintAgent`）・別 git リポジトリ・独自 Doc 体系（requirements/design/tasks）で管理される。本 spec は読取先変更を要件として定義するが、ビルド・デプロイ単位が CommonModule/MainWeb とは別である。
-- A3: PrintJobService の `t_print_queue` への投入側実装は別 spec `dispatch-monitoring-consolidation` が所有する。本 spec は投入契約（投入先・PrintStatus 初期値・PrintPayload 付与）のみ定義する。
+- A2: PrintAgent は別ソリューション（`\\ojiadm23120073\Labs\WindowsService\PrintAgent`）・別 git リポジトリ・独自 Doc 体系（requirements/design/tasks）で管理される。本 spec は読取先変更を要件として定義するが、ビルド・デプロイ単位が CommonModule/MainWeb とは別である。
+- A3: PrintJobService の `t_print_queue` への投入側実装は別 spec `dispatch-monitoring-consolidation` が所有する。本 spec は投入契約（投入先・PrintStatus 初期値・pdf_path 付与）のみ定義する。
 - A4: FAX送信は `t_smtp_queue`（SMTP送信基盤）に一本化済みであり、`t_print_queue` は FAX を扱わない。
 - A5: CommonModule のホスト登録（ModuleRegistration）は CommonModule 側プラットフォームの所有とする。MainWeb への変更が必要な場合は最小限とし、別途ユーザー確認を要する。
 - A6: ビルド・テスト・DDL適用・実印刷はユーザー側で実施する。
@@ -62,12 +62,13 @@
 #### Acceptance Criteria
 
 1. THE Common_Print_Platform SHALL 印刷ジョブを db_common_dev の `t_print_queue` テーブルに保持する。
-2. THE t_print_queue SHALL 現 `t_order_reports` の印刷関連列を踏襲した列（report_type, reference_code, output_type, print_status, print_payload, copies, picked_at, printed_at, error_message, created_at, updated_at, row_version）を保持する。
+2. THE t_print_queue SHALL 印刷関連列（module, report_type, reference_code, output_type, print_status, pdf_path, printer_name, copies, picked_at, printed_at, error_message, created_at, updated_at, row_version）を保持する。
 3. THE t_print_queue SHALL FAX関連列（fax_status 等）を保持しない。
 4. THE t_print_queue SHALL print_status 列を保持し、当該列の値を 0（対象外）, 1（待機）, 2（処理中）, 3（完了）, 9（エラー）のいずれかとして定義する。
-5. THE t_print_queue SHALL print_payload 列を JSON 文字列として保持する。
-6. THE t_print_queue SHALL printed_at 列を印刷完了日時として保持する。
-7. THE t_print_queue SHALL 命名および設計思想を `t_smtp_queue` と対になる形で定義する。
+5. THE t_print_queue SHALL pdf_path 列を必須（NOT NULL）として保持し、当該列を投入側（MaterialModule）が生成・保存した印刷対象 PDF のフルパス（PrintAgent の唯一の印刷ソース）とする。
+6. THE t_print_queue SHALL print_payload 列を保持しない。
+7. THE t_print_queue SHALL printed_at 列を印刷完了日時として保持する。
+8. THE t_print_queue SHALL 命名および設計思想を `t_smtp_queue` と対になる形で定義する。
 
 ### Requirement 2: `t_print_queue` の楽観的ロック
 
@@ -96,10 +97,11 @@
 #### Acceptance Criteria
 
 1. THE 本 spec SHALL PrintJobService が印刷ジョブを `t_print_queue`（db_common_dev）に投入することを契約として定義する。
-2. THE 本 spec SHALL 投入される印刷ジョブが PrintPayload（印刷用 JSON）を保持することを契約として定義する。
+2. THE 本 spec SHALL 投入される印刷ジョブが pdf_path（投入側が生成・保存した印刷対象 PDF のフルパス）を必須（非空）で保持することを契約として定義する。
 3. THE 本 spec SHALL 投入時の print_status 初期値を 1（待機）とすることを契約として定義する。
-4. THE 本 spec SHALL PrintJobService の投入側実装の所有を別 spec `dispatch-monitoring-consolidation` に帰属させ、本 spec は投入契約のみを定義する。
-5. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス経由か直接アクセスか）SHALL `dispatch-monitoring-consolidation` の設計フェーズで決定される。
+4. THE 本 spec SHALL 印刷イメージ（PDF）の生成・保存を投入側（MaterialModule）の前提責務とし、`t_print_queue` は生成済み PDF のパス（pdf_path）を受け取ることを契約として定義する。
+5. THE 本 spec SHALL PrintJobService の投入側実装の所有を別 spec `dispatch-monitoring-consolidation` に帰属させ、本 spec は投入契約のみを定義する。
+6. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス経由か直接アクセスか）SHALL `dispatch-monitoring-consolidation` の設計フェーズで決定される。
 
 ### Requirement 5: PrintAgent の読取先変更
 
@@ -109,10 +111,10 @@
 
 1. THE PrintAgent SHALL 印刷ジョブの読取先を `t_print_queue`（db_common_dev）とする。
 2. THE PrintAgent SHALL `t_order_reports`（db_material_dev）を印刷ジョブの読取先としない。
-3. WHEN PrintAgent が `t_print_queue` の待機（print_status=1）ジョブを取得する、THE PrintAgent SHALL 当該ジョブの print_status を 2（処理中）へ更新する。
+3. WHEN PrintAgent が `t_print_queue` の待機ジョブ（print_status=1 かつ pdf_path が非空）を取得する、THE PrintAgent SHALL 当該ジョブの print_status を 2（処理中）へ更新する。
 4. WHEN PrintAgent が印刷を正常に完了する、THE PrintAgent SHALL 当該ジョブの print_status を 3（完了）へ更新し、printed_at に完了日時を設定する。
-5. IF PrintAgent が印刷処理に失敗する、THEN THE PrintAgent SHALL 当該ジョブの print_status を 9（エラー）へ更新し、error_message にエラー内容を設定する。
-6. WHEN PrintAgent が処理中（print_status=2）のジョブを取得する、THE PrintAgent SHALL PrintPayload から PDF を生成しサイレント印刷を実行する。
+5. IF PrintAgent が印刷処理に失敗する（pdf_path が指すファイルが存在しない場合を含む）、THEN THE PrintAgent SHALL 当該ジョブの print_status を 9（エラー）へ更新し、error_message にエラー内容を設定する。
+6. WHEN PrintAgent が処理中（print_status=2）のジョブを処理する、THE PrintAgent SHALL 当該ジョブの pdf_path が指す生成済み PDF をサイレント印刷する（PDF 生成は行わず、pdf_path を唯一の印刷ソースとする単一パス）。
 7. THE PrintAgent SHALL 資材固有テーブル `t_order_reports` に依存しない。
 
 ### Requirement 6: PrintAgent 死活監視
@@ -132,7 +134,7 @@
 
 #### Acceptance Criteria
 
-1. THE 本 spec SHALL PrintAgent が別ソリューション・別 git リポジトリ（`\\OJIADM23120073\Labs\WindowsService\PrintAgent`）・独自 Doc 体系で管理されることを記録する。
+1. THE 本 spec SHALL PrintAgent が別ソリューション・別 git リポジトリ（`\\ojiadm23120073\Labs\WindowsService\PrintAgent`）・独自 Doc 体系で管理されることを記録する。
 2. THE 本 spec SHALL PrintAgent の読取先変更を本 spec のスコープに含めることを記録する。
 3. THE 本 spec SHALL PrintAgent のビルド単位およびデプロイ単位が CommonModule・MainWeb とは別であることを記録する。
 
@@ -157,7 +159,7 @@
 2. THE Common_PrintMonitor SHALL print_status・report_type・キーワード・作成日付範囲によるフィルタ機能を提供する。
 3. THE Common_PrintMonitor SHALL print_status 別の件数サマリ（待機・処理中・完了・エラー）を表示する。
 4. WHEN 利用者が完了（print_status=3）またはエラー（print_status=9）のジョブを再出力する、THE Common_PrintMonitor SHALL 当該ジョブの print_status を 1（待機）へ戻す。
-5. IF 再出力対象のジョブが PrintPayload を保持しない、THEN THE Common_PrintMonitor SHALL 当該ジョブを再出力せず、再出力できない旨を通知する。
+5. IF 再出力対象のジョブが pdf_path を保持しない、THEN THE Common_PrintMonitor SHALL 当該ジョブを再出力せず、再出力できない旨を通知する。
 6. THE Common_PrintMonitor SHALL `m_print_agent_control` の最終 heartbeat に基づき PrintAgent の死活（ポーリング中／応答なし）を表示する。
 7. THE Common_PrintMonitor SHALL 機能範囲（一覧・フィルタ・サマリ・死活表示・再出力）を Common_SmtpMonitor と同等とする。
 
@@ -177,7 +179,7 @@
 #### Acceptance Criteria
 
 1. THE 本 spec SHALL 投入先（PrintJobService、`dispatch-monitoring-consolidation` 所有）と読取先（PrintAgent、本 spec 所有）を同時に切り替える手順を定義する。
-2. THE カットオーバー手順 SHALL 切替時点で `t_order_reports` に残る未処理（print_status=1 または 2）印刷ジョブを `t_print_queue` へ移行する手順を含む。
+2. THE カットオーバー手順 SHALL 切替時点で `t_order_reports` に残る未処理（print_status=1 または 2）印刷ジョブを、投入側が生成・保存した pdf_path を付与したうえで `t_print_queue` へ移行する手順を含む。
 3. THE カットオーバー手順 SHALL 切替後に `t_order_reports` を印刷ジョブの投入先・読取先として使用しないことを定義する。
 4. THE カットオーバー手順 SHALL 切替の順序（DDL適用 → データ移行 → 投入先切替 → 読取先切替）を定義する。
 5. IF 切替時点で `t_order_reports` に未処理印刷ジョブが残存する、THEN THE カットオーバー手順 SHALL 当該ジョブを取り残さず `t_print_queue` で処理可能な状態に移行する。
@@ -202,6 +204,7 @@
 
 1. THE 本 spec SHALL `t_print_queue` のスキーマ契約の発生元（所有者）である。
 2. THE 本 spec SHALL カットオーバー（移行手順・切替順序）の契約の発生元（所有者）である。
-3. THE 本 spec SHALL PrintAgent の読取先変更および Common_PrintMonitor の設置を所有する。
+3. THE 本 spec SHALL PrintAgent の読取先変更・印刷専用化および Common_PrintMonitor の設置を所有する。
 4. THE 本 spec SHALL PrintJobService の投入側実装を所有せず、`dispatch-monitoring-consolidation` に帰属させる。
 5. THE 本 spec SHALL FAX一本化・Material_SmtpMonitor 廃止・Common_SmtpMonitor 集約を所有せず、`dispatch-monitoring-consolidation` に帰属させる。
+6. THE 本 spec SHALL 印刷イメージ（PDF）生成の実装を所有せず、投入側（MaterialModule／`dispatch-monitoring-consolidation`）に帰属させ、本 spec は `t_print_queue` の契約（pdf_path が印刷対象 PDF を保持）と PrintAgent の印刷専用化のみを所有する。

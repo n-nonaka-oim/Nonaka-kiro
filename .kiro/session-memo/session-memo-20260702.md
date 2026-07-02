@@ -1,0 +1,235 @@
+# セッション備忘録（2026/07/02 - print-platform 設計改訂：PrintAgent 印刷専用化・PDF一本・print_payload 廃止）
+
+前セッション（20260701）からの継続。print-platform 実装 17/37（Web側1〜4・PrintAgent 6）まで完了後、設計の根本訂正が入ったため design→requirements を改訂中。
+
+## セッション開始時の状態（20260701 末尾より）
+- print-platform 実装 17/37 完了（タスク1〜4＝CommonModule/Web側、6＝PrintAgent エンティティ/DbContext/接続先）。
+- コミット済み: CommonModule `88473b3`（4.6/4.8）・Nonaka `9ae68e9`。
+- 未コミット: PrintAgent（6.1 TPrintQueue.cs 追加・6.2 DbContext・6.3 appsettings）・Nonaka/.kiro（tasks 進捗・memo）。
+- ⚠ PrintAgent は 6.2 で `db.OrderReports` 参照が壊れ、7.1 までビルド不可（想定どおり）。
+- 環境確認済み: db_common_dev 実在（SmtpAgent が既に使用）。db_material_dev は material オリジナルとして不変。PrintAgent/SmtpAgent はワークスペース内（小文字パス `ojiadm23120073` で編集可）。
+
+## 🔴 設計の根本訂正（ユーザー確定・本日の主題）
+**PrintAgent は「受け取った PDF をサイレント印刷するだけ」。印刷イメージ（PDF）の生成は送信側（投入側）の責務。**
+現行 design のデュアルモード（D6＝pdf_path 無ければ payload から PrintAgent が生成）は誤り → **PDF一本（pdf_path 必須・payload 生成経路なし）**へ是正。
+
+### ユーザー3決定
+1. design を上記 To-Be へ改訂 = **OK**
+2. PDF 生成の担い手 = **a) MaterialModule 側で生成して pdf_path を渡す**
+3. `print_payload` = **完全廃止**
+
+## 本日の完了作業（最小単位・順に委譲）
+
+### 1. design.md 改訂 完了（単一正本・診断クリア）
+- D6 を「印刷専用・単一パス」に全面改訂（payload 生成分岐撤廃・PrintAgent は pdf_path をサイレント印刷のみ）。D1/D4 追随。
+- `print_payload` 列 廃止／`pdf_path` NOT NULL 必須化（Data Models 表・DDL 記述・スモーク）。
+- `IPrintQueueService` から `printPayload` 引数削除・`pdfPath` 必須／`PrintQueueService` 検証を pdf_path 必須へ。
+- Worker 取得条件「print_status=1 かつ pdf_path IS NOT NULL」／`PdfGeneratorService`・`Documents/*.cs` は PrintAgent から退役（→MaterialModule 所有）。
+- Property 8（出力ソース選択）廃止・Property 2 を pdf_path 必須に・Property 1/3 の payload 参照除去（Property 1〜7＝PBT、9＝統合）。
+- Error Handling／カットオーバー（残ジョブは pdf_path 必須）／責務分界（PDF生成は MaterialModule/dispatch 所有）追随。
+- 「実装同期の注記」を design 内に明記：実装済み CommonModule（entity print_payload・service 検証・DDL・監視再出力条件）は tasks で是正。
+
+### 2. requirements.md 追随更新 完了（単一正本・診断クリア）
+- Glossary: `PrintPayload` 廃止→`pdf_path`（必須・唯一の印刷ソース）。PrintAgent=印刷専用。host 小文字化。
+- R1: 列一覧に module/pdf_path/printer_name、print_payload 削除。AC5=pdf_path 必須(NOT NULL・唯一の印刷ソース)、新AC6=print_payload 列を持たない。
+- R4: AC2=pdf_path 非空必須（payload 代替削除）、新AC4=送信側PDF生成が前提・キューは生成済みPDFパス受領。
+- R5: AC3 取得条件「print_status=1 かつ pdf_path 非空」、AC5 に pdf_path 不存在、AC6 単一印刷パス（生成しない）。
+- R9.5: 再出力可否を pdf_path 基準。R11.2: 残ジョブ移行に pdf_path 付与。R13: AC3 印刷専用化所有・新AC6 PDF生成非所有。
+- 既存詳細化済みのため全要件の再詳細化はしない（外科的修正）。
+
+## 次アクション（最小単位・1つずつ）
+### 3. tasks.md 追随更新（次にやる）
+- 7.1 を「pdf_path をサイレント印刷のみ」に簡素化。7.2（Property 8 出力ソース選択）削除。
+- **CommonModule 是正タスク追加**: `TPrintQueue` から print_payload 削除／`PrintQueueService` pdf_path 必須・`IPrintQueueService` シグネチャ（printPayload 削除・pdfPath 必須）／`create_t_print_queue.sql`（print_payload 削除・pdf_path NOT NULL）／`Common_PrintMonitor` 再出力条件 pdf_path。
+- PrintAgent 12（7.1 相当）: `PdfGeneratorService`/`Documents/*.cs` 退役の扱い（削除 or 保留）を明記。9.1 移行SQL pdf_path 必須。
+- Property 一覧 1〜7＝PBT・9＝統合（8 廃止）を反映。
+
+### 4. 実装是正（CommonModule）
+- `TPrintQueue` から print_payload プロパティ削除／`PrintQueueService`・`IPrintQueueService`／`create_t_print_queue.sql`／`Common_PrintMonitor` 再出力条件。
+
+### 5. PrintAgent 7.1（印刷専用）
+- `PrintJobWorker` を pdf_path サイレント印刷のみに。PrintAgent 側 `TPrintQueue`（6.1作成）は print_payload 未実装なので確認のみ。PdfGeneratorService/Documents 退役の実施可否を判断。これで PrintAgent 再ビルド可能に。
+
+## 未コミット（次回コミット対象）
+- PrintAgent（別git・6.1/6.2/6.3）: `Models/TPrintQueue.cs`（新規）・`Data/PrintAgentDbContext.cs`・`appsettings.json`。
+- Nonaka/.kiro: `design.md` 改訂・`requirements.md` 改訂・`tasks.md`(6.x [x])・session-memo（20260701 末尾＋本 20260702）。
+
+## 運用ルール（厳守・再掲）
+- 1ターン=1タスクで区切る。パスは小文字 `ojiadm23120073`（大文字は範囲外誤判定）。
+- MainWeb・SharedCore・AuthModule 変更不可。spec 単一正本 `.kiro/specs/{Module}/{feature}/`。
+- ビルド・テスト・DDL適用・実印刷・PrintAgent 再デプロイはユーザー側。
+- `task_update` ツールが使用不可のことがある → tasks.md チェックボックスを正として継続。
+
+## 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260702）。
+
+---
+
+## tasks.md 追随更新 完了（印刷専用・Property8廃止・是正タスク11追加）
+
+- Overview/Notes: デュアルモード→印刷専用、Property 1〜8→1〜7（＋9統合）。host小文字化。
+- 7.1 を「pdf_path サイレント印刷のみ（PdfGeneratorService/IPdfGeneratorService/Documents は PrintAgent から退役）」に書き換え。**7.2（Property 8）削除**。
+- 完了済みタスクの記述是正（[x]維持）: 1.1（print_payload 列削除・pdf_path NOT NULL）／3.1（pdf_path 必須・printPayload 引数なし）／4.6（再出力条件 pdf_path）。3.3/4.7（Property 2/3）を pdf_path 基準に。
+- **新タスク群 11 追加（CommonModule 実装是正・未着手）**:
+  - 11.1 TPrintQueue.cs から print_payload 削除
+  - 11.2 IPrintQueueService/PrintQueueService を pdf_path 必須へ（printPayload 引数削除）
+  - 11.3 create_t_print_queue.sql から print_payload 削除・pdf_path NOT NULL
+  - 11.4 Common_PrintMonitor OnPostReprintAsync 再出力条件 pdf_path 基準へ
+  - 11.5 テーブル定義書・ER図 追随
+- 9.1 移行SQL: pdf_path 必須（送信側生成 pdf_path 付与・用意不可は対象外）。print_payload 移行しない。
+- 依存グラフ: 7.2 除去、wave6 に 11.1〜11.5、以降のwave繰り下げ（0〜10）。診断クリア。
+- 軽微な残: チェックポイント 8「Property 7〜9」・10「Property 1〜9」は Property 8 廃止後も範囲表記のまま（許容・実害なし）。
+
+### 進捗・次
+- design ✅／requirements ✅／tasks ✅ 改訂完了。実装是正フェーズへ。
+- **次の最小単位（1ファイルずつ）**: 11.1 → 11.2 → 11.3 → 11.4 → 11.5（CommonModule 是正）→ その後 PrintAgent 7.1（印刷専用）。
+- CommonModule 是正（11.x）で PrintQueueService/IPrintQueueService/entity/DDL/監視を pdf_path 一本化 → CommonModule ビルド確認（ユーザー）。
+- ⚠ PrintAgent は 7.1 まで依然ビルド不可。
+- 未コミット: PrintAgent（6.x）・Nonaka/.kiro（design/requirements/tasks 改訂・memo）。
+
+---
+
+## CommonModule 実装是正 11.1〜11.4 完了（print_payload 排除・pdf_path 一本化）
+
+- **11.1** `CommonModule/Data/Entities/TPrintQueue.cs`: `PrintPayload` プロパティ削除・`PdfPath` を [Required] 非nullable(string=empty) に。クラス概要を印刷専用に。診断クリア。
+- **11.2** `IPrintQueueService`/`PrintQueueService`: `EnqueueAsync` から `printPayload` 引数削除・`pdfPath` 必須（RequireNonBlank 追加）・初期化子から PrintPayload 除去。診断クリア。CommonModule の entity↔service 不整合解消。
+- **11.3** `CommonModule/docs/sql/create_t_print_queue.sql`: `print_payload` 列削除・`pdf_path` NOT NULL・ヘッダを印刷専用に。
+- **11.4** `Common_PrintMonitor/Index.cshtml.cs` `OnPostReprintAsync`: 再出力条件を pdf_path 基準へ（payload 参照除去）・XMLドコメント是正。診断クリア。
+- → CommonModule コードは print_payload を完全排除。**CommonModule.sln はビルド可能な状態**（ユーザー確認可）。tasks 11.1〜11.4 = [x]。
+
+### 残・次
+- **11.5**（ドキュメント）: `.kiro/docs/db/テーブル定義書.md`・`ER図.md` の t_print_queue から print_payload 削除・pdf_path NOT NULL に追随。
+- その後 **PrintAgent 7.1**（印刷専用）: `PrintJobWorker` を pdf_path サイレント印刷のみに。PrintAgent 側 TPrintQueue（6.1）は print_payload 未実装のため確認のみ。PdfGeneratorService/Documents 退役の実施可否を判断。→ これで PrintAgent 再ビルド可能。
+- 未コミット: CommonModule（11.1〜11.4）・PrintAgent（6.x）・Nonaka/.kiro（spec 3点改訂・tasks 進捗・memo）。
+
+---
+
+## 11.5 完了（親11完了）＋ MainWeb 依存関係はユーザー所有に確定
+
+### MainWeb 登録の実態（判明）
+- `MainWeb/Configuration/ModuleRegistration.cs`（gitignore対象・実行時）は既に `AddCommonModule(configuration)` を呼ぶ（using CommonModule.Extensions）。
+- ただし **`MainWeb.csproj` に CommonModule の ProjectReference 無し**（DemoModule/MaterialModule/AuthModule/SharedCore/SharedInfrastructure のみ）。**`slnCoCore.sln` にも CommonModule 未登録** → **slnCoCore ではビルド不可**（CommonModule.sln 単独ビルドのみ可）状態。
+- grep で clnCoCore に CommonModule ヒット無し＝ModuleRegistration.cs は gitignore のため検索外・MainWeb.csproj は実際に未参照。
+
+### 決定（ユーザー）
+- **slnCoCore への CommonModule 追加・MainWeb 依存関係構築はユーザーが実施**（MainWeb/clnCoCore は変更不可・こちらは触らない）。その後にビルド確認。
+- 私（Kiro）は MainWeb/clnCoCore を変更しない。CommonModule 側成果物のみ担当。
+
+### 11.5 完了（ドキュメント追随）
+- `.kiro/docs/db/テーブル定義書.md` t_print_queue（db_common_dev）節: 説明を印刷専用に、`print_payload` 行削除、`pdf_path` を必須(○)・唯一の印刷ソースに。旧 t_order_reports（db_material_dev・line702付近・fax_status/print_payload 有）は保全で不変。
+- `.kiro/docs/db/ER図.md`: リレーション備考の「デュアルモード」→「印刷専用・単一パス」。mermaid は元々 print_payload 非掲載で対応不要。
+- 親タスク **11 完了**（11.1〜11.5）。tasks 進捗更新。
+
+### 現状と次
+- **CommonModule 側は print_payload 完全排除・pdf_path 一本化 完了**（entity/service/DDL/監視/ドキュメント）。CommonModule.sln 単独はビルド可。
+- ⏸ ユーザー作業待ち: slnCoCore に CommonModule 追加＋MainWeb.csproj 参照＋（必要なら ModuleRegistration.cs.template 反映）→ slnCoCore ビルド確認。
+- その後の次アクション: **PrintAgent 7.1（印刷専用ワーカー）**。`PrintJobWorker` を pdf_path サイレント印刷のみに（PdfGeneratorService/Documents 退役の可否も判断）。→ PrintAgent 再ビルド可能に。
+- 未コミット: CommonModule（11.1〜11.4）・Nonaka/.kiro（spec 3点改訂・tasks・docs/db・memo）・PrintAgent（6.x）。
+
+---
+
+## MainWeb 依存関係登録（ユーザー明示許可のもと実施）
+
+- ユーザーが MainWeb 依存関係登録を一時解除 → 指示により **`MainWeb.csproj` に `<ProjectReference Include="..\..\CommonModule\CommonModule.csproj" />` を追加**（MaterialModule と同じ相対形・変更不可の例外＝ユーザー明示許可）。
+- 既存: `ModuleRegistration.cs`（gitignore・実行時）は `AddCommonModule(configuration)` を既に呼ぶ。今回の ProjectReference 追加で解決可能に。
+- slnCoCore.sln への CommonModule プロジェクト追加はユーザー実施（IDE可視化用。ビルドは csproj 参照で транзитивに通る）。
+- パス整合確認: CommonModule → SharedCore = `..\clnCoCore\SharedCore\SharedCore.csproj`（OK）。
+- ⏳ 次: ユーザーが **slnCoCore ビルド確認**。通れば print_payload 廃止後の CommonModule 含め CoCore 全体OK。
+- 注意: この MainWeb.csproj 変更はユーザー所有領域（clnCoCore）。コミット/管理はユーザー側。
+
+---
+
+## slnCoCore ビルド：CommonModule/MainWeb は成功、PrintAgent OrderReports エラー→7.1で解消
+
+### ビルド結果分析
+- **ハードエラーは1件のみ**: `PrintAgentDbContext に OrderReports の定義が無い`（PrintJobWorker 旧参照＝想定内の中間状態）。
+- CommonModule の print_payload 廃止・MainWeb への CommonModule ProjectReference 追加は**エラー0**（成功）。
+- 他は既存警告のみ（CA1416 EventLog=Windows専用／未使用パラメータ prefService・masterService・receivingService／nullable）。ビルドを止めない。
+
+### 7.1 完了（PrintAgent 印刷専用ワーカー）
+- `PrintJobWorker.cs`: `db.OrderReports`→`db.PrintQueue`、取得条件 `print_status=1`（pdf_path は NOT NULL 必須）。JSON payload デシリアライズ・`PdfGeneratorService.GeneratePdf` 呼び出し・`PrintPayloadDto` 使用を除去。`job.PdfPath` を直接 `SilentPrintService.PrintPdf` でサイレント印刷。`File.Exists` ガード→無ければ status9。完了 `PrintStatus=3・PrintedAt=UtcNow`（CompletedAt/PrintAt 廃止）。失敗 status9・error_message(500)。row_version 楽観ロックの skip 維持。heartbeat 不変。コンストラクタから `IPdfGeneratorService` 引数を除去。
+- **追加是正（重要）**: PrintAgent 側 `Models/TPrintQueue.cs` から `PrintPayload` プロパティ削除・`PdfPath` を [Required] 非nullable に（6.1 では print_payload 込みで作成していた）。→ t_print_queue に print_payload 列が無いため、放置すると EF が存在しない列を SELECT して実行時エラーになるのを防止。ワーカー取得条件の `r.PdfPath != null`（常真警告）も除去。
+- PrintAgent 2ファイル診断クリア。tasks 7.1 = [x]。
+
+### 残・注意
+- `PdfGeneratorService`/`IPdfGeneratorService`/`Documents/*.cs` は**未削除（退役は別クリーンアップ）**。Program.cs の IPdfGeneratorService 登録も残置（無害）。→ 後続クリーンアップ候補。
+- PrintAgent 側 `TOrderReport.cs` も未削除（6.2 で DbSet 差替え済み・現在未参照）。→ クリーンアップ候補。
+- 次: ユーザーが **slnCoCore 再ビルド**（PrintAgent は別sln＝PrintAgent.sln のビルド）でエラー解消を確認。db_common_dev に DDL（t_print_queue/m_print_agent_control）適用が実行前提。
+- 残タスク: 5(CP)・8(CP)・9.1/9.2(カットオーバー)・10(最終CP)・任意PBT(3.2/3.3/4.2/4.3/4.5/4.7/7.3/7.5)。PrintAgent クリーンアップ（PdfGenerator/Documents/TOrderReport 退役）。
+- 未コミット: CommonModule(11.x)・MainWeb.csproj(参照追加・ユーザー領域)・PrintAgent(6.x/7.1)・Nonaka/.kiro(spec/tasks/docs/memo)。
+
+---
+
+## PrintAgent ビルド OK ＋ slnCoCore 構成方針（ユーザー確定）
+
+- **PrintAgent（PrintAgent.sln）ビルド OK**（7.1・TPrintQueue是正後）。CommonModule/MainWeb（slnCoCore）もエラー0で成功済み。
+- **方針確定**: PrintAgent・SmtpAgent は Web認証基盤を持たない Worker モジュールのため、**slnCoCore ソリューションからプロジェクト除外**（各 .sln でビルド・デプロイ）。＝system-architecture.md の「Worker は別ソリューション」と整合。slnCoCore に含めるのは Web 系（MainWeb/AuthModule/SharedCore/SharedInfrastructure/各モジュール）。CommonModule は MainWeb にホストされる Web モジュールなので slnCoCore 対象。
+- この除外操作はユーザーが実施（clnCoCore/sln 領域）。
+
+### print-platform 実装 現況（コア完了）
+- Web側: 1〜4 完了＋是正11完了（print_payload 全廃・pdf_path 一本化）。MainWeb に CommonModule 登録済み（ユーザー許可）。
+- PrintAgent側: 6.x（entity/DbContext/接続先）＋7.1（印刷専用）＋TPrintQueue是正 完了。ビルドOK。
+- ビルド通過（CommonModule/MainWeb/PrintAgent）。
+
+### 次アクション候補（最小単位・1つずつ）
+1. **区切りコミット推奨**（安定点）: CommonModule(11.x)・PrintAgent(6.x/7.1)・Nonaka/.kiro（spec/tasks/docs/memo）。MainWeb.csproj はユーザー領域（ユーザーコミット）。
+2. 9.1 未処理印刷データ移行SQL（`CommonModule/docs/sql`・ワークスペース内で可）。
+3. PrintAgent クリーンアップ（PdfGeneratorService/IPdfGeneratorService/Documents/TOrderReport 退役・Program.cs 整理）＝別小タスク。
+4. 任意PBT（3.2/3.3/4.2/4.3/4.5/4.7/7.3/7.5）・CP 5/8/10。
+- 実行時前提: db_common_dev に DDL 適用（t_print_queue/m_print_agent_control）。
+
+---
+
+## 9.1 完了（残ジョブ移行SQL・pdf_path必須反映）
+
+- 作成: `CommonModule/docs/sql/migrate_t_order_reports_to_t_print_queue.sql`（診断クリア）。
+- pdf_path 必須の最重要注記: 旧 t_order_reports に pdf_path 無し・payload生成退役 → `#pdf_path_map`(reference_code[+report_type]→pdf_path) を INNER JOIN で供給、供給不可行は自動除外（ダミーパス禁止）。
+- マッピング: module=N'material' 固定／printed_at=COALESCE(completed_at,print_at)／fax_status・print_payload 非移行／id・row_version 自動。print_status=2 は既定 1 リセット or 除外の両案。取り残しゼロ照合(eligible/out-of-scope/inserted)＋TX＋ロールバック(module/created_at窓口)。
+- 留意（テンプレ軽微）: ロールバック(Y) created_at 窓口は移行行が元 created_at を引き継ぐためズレる → 並行投入時は (X) module マーカ推奨 or 移行目印を別途。SELECT確認後DELETE前提で実害限定。
+- tasks 9.1 = [x]。ユーザーが pdf_path 対応表を確定して db_common_dev で実行。
+
+### 残（次回候補）
+- 9.2 Spec 最終整合確認（単一正本・requirements/design/tasks 整合）。
+- PrintAgent クリーンアップ（PdfGeneratorService/IPdfGeneratorService/Documents/*.cs・旧 TOrderReport.cs 退役・Program.cs 整理）。
+- CP 5/8/10・任意PBT。
+- 実行時前提: db_common_dev に DDL（t_print_queue/m_print_agent_control）適用。
+- 未コミット: CommonModule(9.1 SQL)・Nonaka/.kiro(tasks 9.1・memo)。
+
+---
+
+## 9.2 完了（Spec 最終整合確認）＋SQL実行タイミング整理／親9完了
+
+### SQL 実行タイミング（ユーザー質問への回答）
+- **DDL 2本（create_t_print_queue.sql / create_m_print_agent_control.sql）= 今すぐ実行可**（db_common_dev・非破壊）。CommonModule 監視画面・PrintAgent の疎通確認の前提。
+- **移行SQL（migrate_...）= カットオーバー時（今はまだ）**。③投入先切替は dispatch-monitoring-consolidation 所有で未実装。かつ残ジョブの pdf_path は MaterialModule の PDF 生成が実装されて初めて用意可能。今流すと in-scope 0件。
+
+### 9.2 完了
+- spec 3ファイル（requirements/design/tasks）整合確認。print_payload/デュアルモード/Property8 の残存は全て「廃止・持たない」記述 or 履歴注記のみ（有効残存なし）。
+- design「実装同期の注記」を未来形→**完了形（tasks 11 で是正済み・現行実装と一致）**に更新。
+- tasks 9.2＝[x]、親9＝[x]。
+
+### print-platform 残（全て任意 or 検証 or 実行系）
+- 任意PBT: 3.2/3.3/4.2/4.3/4.5/4.7（CommonModule.Tests）・7.3/7.5。
+- 検証CP: 5（CommonModuleテスト）・8（PrintAgent/統合）・10（最終）。
+- 7.4 heartbeat（既存維持で実質OK・未チェック）。
+- PrintAgent クリーンアップ（PdfGeneratorService/IPdfGeneratorService/Documents/*.cs・旧 TOrderReport.cs 退役・Program.cs 整理）＝別小タスク（死コード）。
+- 実行系（ユーザー）: DDL 適用・実印刷・カットオーバー（dispatch-monitoring-consolidation 前提）。
+
+### 未コミット
+- CommonModule（9.1 SQL）・Nonaka/.kiro（tasks 9.1/9.2・design 注記・memo）。
+
+---
+
+## 関連ドキュメント反映（印刷専用化）：横断構成書・CommonModule README 更新
+
+- `.kiro/docs/system-architecture.md`:
+  - 構成図の PrintAgent ラベルを「印刷専用・pdf_path をサイレント印刷」に。
+  - コンポーネント表 PrintAgent 行を「印刷専用（投入側生成 pdf_path を印刷・PDF生成しない）」に。
+  - 組込セクションに **ソリューション構成**注記追加：slnCoCore は Web ホスト対象（MainWeb/Auth/SharedCore/SharedInfrastructure/Material/**CommonModule**）を含み、**PrintAgent・SmtpAgent は Worker のため slnCoCore 除外**（各 .sln）。CommonModule は MainWeb.csproj から参照し slnCoCore 対象。
+- `CommonModule/docs/README.md`:
+  - sql/ の内訳を SMTP群／Print群（create_t_print_queue[印刷専用・pdf_path NOT NULL・print_payload無]／create_m_print_agent_control／migrate_...）に整理。
+  - 旧「コピーを docs/specs に置く」記述を単一正本（コピー廃止）に是正。
+
+### 残（関連ドキュメント反映の続き・別小単位）
+- **PrintAgent/docs 一式の更新**（`requirements.md`/`design.md`/`tasks.md`/`spec.md`／`direct-print/`）：旧 payload 生成方式 → 印刷専用（t_print_queue＠db_common_dev 読取・pdf_path サイレント印刷・PdfGenerator/Documents 退役）。やや大きめのため分割して実施予定。
+- 未コミット: CommonModule（9.1 SQL・README）・Nonaka/.kiro（tasks 9.x・design 注記・system-architecture・memo）。

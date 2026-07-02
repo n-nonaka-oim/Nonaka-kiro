@@ -85,7 +85,7 @@ erDiagram
 
 | テーブル | 参照先 | 参照列 | 備考 |
 |---------|--------|--------|------|
-| t_print_queue | （各業務モジュールの発注等） | reference_code | 発注番号等への論理参照（FK制約なし・コード参照）。PDF直接印刷/payload生成のデュアルモードで印刷 |
+| t_print_queue | （各業務モジュールの発注等） | reference_code | 発注番号等への論理参照（FK制約なし・コード参照）。投入側が生成した pdf_path の PDF を印刷（印刷専用・単一パス） |
 
 > `t_print_queue` は全モジュール横断の共通印刷キュー。`t_smtp_queue`（FAX/メール送信）と対の共通基盤で、FK制約は持たず `reference_code`（発注番号等）で発生元を参照する。FAX関連列は持たない。
 > `m_print_agent_control` は PrintAgent(Worker) の死活監視（heartbeat）専用の1行運用テーブルで、他テーブルとリレーションを持たない（独立）。`m_smtp_agent_control` と対。

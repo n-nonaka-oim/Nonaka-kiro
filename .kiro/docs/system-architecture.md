@@ -31,7 +31,7 @@ flowchart TB
 
     subgraph Workers["Worker（別ソリューション・別リポジトリ／WindowsService）"]
         SMTP["SmtpAgent<br/>t_smtp_queue を処理（メール/FAX送信）"]
-        PRINT["PrintAgent<br/>t_print_queue を処理（印刷・デュアルモード）"]
+        PRINT["PrintAgent<br/>t_print_queue を処理（印刷専用・pdf_path をサイレント印刷）"]
     end
 
     subgraph DB["SQL Server（OJIADM23120073\\DEVELOPMENT）"]
@@ -61,7 +61,7 @@ flowchart TB
 | 機能 | MaterialModule | 資材業務（発注〜入出庫・MRP・マスタ等） | db_material_dev / Material | 可（担当） | MaterialModule |
 | 機能/基盤 | CommonModule | 共通キュー基盤（SMTP/印刷）・共通監視画面・投入サービス | db_common_dev / Common | 可（担当） | CommonModule |
 | Worker | SmtpAgent | `t_smtp_queue` をポーリングしメール/FAX送信 | db_common_dev | 可（担当） | SmtpAgent |
-| Worker | PrintAgent | `t_print_queue` をポーリングし印刷（pdf_path 優先デュアルモード） | db_common_dev | 可（担当） | PrintAgent |
+| Worker | PrintAgent | `t_print_queue` をポーリングし **印刷専用**（投入側が生成した `pdf_path` の PDF をサイレント印刷。PDF生成は行わない） | db_common_dev | 可（担当） | PrintAgent |
 
 ## 組込（ホスト登録）
 
@@ -70,6 +70,7 @@ flowchart TB
 - 各モジュールは自身の `Extensions/*Extensions.cs`（`Add{Module}`）で DI・Area・DbContext・接続文字列注入を完結。
 - 接続文字列キー: Auth=`DefaultAccountConnection`、資材=`MaterialDb`、共通=`CommonDb`。
 - PathBase: `/AuthTest`（IIS 配置用）。
+- **ソリューション構成**: `slnCoCore.sln` には Web ホスト対象（MainWeb / AuthModule / SharedCore / SharedInfrastructure / MaterialModule / **CommonModule** 等）を含める。**PrintAgent・SmtpAgent は Web認証基盤を持たない Worker のため slnCoCore からは除外**し、各自の `.sln`（`PrintAgent.sln` / `SmtpAgent.sln`）でビルド・デプロイする。CommonModule は MainWeb にホストされる Web モジュールのため `MainWeb.csproj` から ProjectReference され、slnCoCore に含める。
 
 ## DB 構成
 

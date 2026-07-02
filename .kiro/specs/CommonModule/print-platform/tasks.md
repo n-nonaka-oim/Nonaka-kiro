@@ -2,17 +2,17 @@
 
 ## Overview
 
-design.md に基づき、共通プリント基盤を段階的に実装する。SMTP送信基盤（smtp-sender）と一対一で対応する構成であり、実装順は「DBスキーマ(DDL)＋ドキュメント → CommonModule 共通エンティティ・DbContext → 投入サービス `IPrintQueueService` → 共通監視画面 `Common_PrintMonitor` → PrintAgent（別ソリューション）読取先変更＋デュアルモード → カットオーバー（移行・切替）」とする。各段階で動作確認できる最小単位に分割する。
+design.md に基づき、共通プリント基盤を段階的に実装する。SMTP送信基盤（smtp-sender）と一対一で対応する構成であり、実装順は「DBスキーマ(DDL)＋ドキュメント → CommonModule 共通エンティティ・DbContext → 投入サービス `IPrintQueueService` → 共通監視画面 `Common_PrintMonitor` → PrintAgent（別ソリューション）読取先変更＋印刷専用化（pdf_path サイレント印刷） → カットオーバー（移行・切替）」とする。各段階で動作確認できる最小単位に分割する。
 
 実装の中心は次の2つ。
 - 既存 `CommonModule` プロジェクト（Area `Common`）: 共通エンティティ `TPrintQueue`／`MPrintAgentControl`、`CommonDbContext` への DbSet 追加、`IPrintQueueService`／`PrintQueueService`、共通監視画面 `Common_PrintMonitor`（`/Common/PrintMonitor`）。
-- 既存 `PrintAgent`（`\\OJIADM23120073\Labs\WindowsService\PrintAgent`、別ソリューションの .NET Worker）の改修: `t_order_reports` 依存を `t_print_queue` へ置換、接続先を `db_common_dev` へ変更、`pdf_path` 優先のデュアルモード対応、`row_version` 追加による楽観ロック実効化。
+- 既存 `PrintAgent`（`\\ojiadm23120073\Labs\WindowsService\PrintAgent`、別ソリューションの .NET Worker）の改修: `t_order_reports` 依存を `t_print_queue` へ置換、接続先を `db_common_dev` へ変更、`pdf_path` の生成済み PDF をサイレント印刷する印刷専用化（PDF 生成は行わない）、`row_version` 追加による楽観ロック実効化。
 
 前提・運用ルール:
 - DBスキーマの作成・実行はユーザー側で行う。タスクでは DDL SQL ファイル（`CommonModule/docs/sql/`）を作成するところまでを行い、実行はユーザーに依頼する。
 - ビルド・テスト実行・実印刷はユーザー側で行う（タスク内でビルド・実行・実印刷はしない）。
 - MainWeb・AuthModule のソース・設定は変更しない（参照のみ）。成果物は CommonModule 内で完結させる（R12.1・R12.2）。
-- Correctness Property 1〜8 は CommonModule.Tests の PBT（FsCheck/CsCheck 等、最低100イテレーション）で実装し、各テストに `// Feature: print-platform, Property {n}` タグを付す。Property 9 は並行統合テスト（1〜2例）で実装する。
+- Correctness Property 1〜7 は CommonModule.Tests の PBT（FsCheck/CsCheck 等、最低100イテレーション）で実装し、各テストに `// Feature: print-platform, Property {n}` タグを付す。Property 9 は並行統合テスト（1〜2例）で実装する。
 - エラー列の物理名は `error_message` に統一（requirements 追随更新済み）。`m_print_agent_control` は 1行運用・単一Writer のため `row_version` を付与しない（`m_smtp_agent_control` とのパリティ＝ルールの明示的例外）。
 - Spec は `.kiro/specs/CommonModule/print-platform/` に単一正本として管理する（モジュール別コピーは持たない）。
 
@@ -21,7 +21,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 - [ ] 1. DBスキーマDDLとドキュメントの整備（共通DB `db_common_dev`）
   - [x] 1.1 `t_print_queue`・`m_print_agent_control` の CREATE TABLE DDL を作成
     - `CommonModule/docs/sql/` に 2 テーブルの CREATE TABLE スクリプトを作成
-    - `t_print_queue`: id(IDENTITY,PK)/module(NOT NULL)/report_type(NOT NULL)/reference_code(NOT NULL)/output_type(NOT NULL)/print_status(NOT NULL,既定1)/print_payload(nvarchar(max))/pdf_path(nvarchar(500))/printer_name(nvarchar(200))/copies(NOT NULL,既定1)/picked_at/printed_at/error_message(nvarchar(500))/created_at(NOT NULL)/updated_at(NOT NULL)/row_version(rowversion)。fax_status 列は持たせない
+    - `t_print_queue`: id(IDENTITY,PK)/module(NOT NULL)/report_type(NOT NULL)/reference_code(NOT NULL)/output_type(NOT NULL)/print_status(NOT NULL,既定1)/pdf_path(nvarchar(500),NOT NULL)/printer_name(nvarchar(200))/copies(NOT NULL,既定1)/picked_at/printed_at/error_message(nvarchar(500))/created_at(NOT NULL)/updated_at(NOT NULL)/row_version(rowversion)。fax_status 列も print_payload 列も持たせない
     - インデックス `IX_t_print_queue_status_created (print_status, created_at)`・`IX_t_print_queue_reference_code (reference_code)`・`IX_t_print_queue_module (module)` を含める
     - `m_print_agent_control`: id(IDENTITY,PK)/last_heartbeat_at/machine_name(nvarchar(100))/updated_at(NOT NULL)。row_version は持たせない
     - スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う」旨をコメントで明記
@@ -52,7 +52,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
   - [x] 3.1 `IPrintQueueService` / `PrintQueueService` を実装
     - `CommonModule/Services/` に `IPrintQueueService`（`EnqueueAsync`）と `internal` 実装 `PrintQueueService` を作成（`ISmtpQueueService`/`SmtpQueueService` と同作法）
     - `print_status=1` で 1 件 INSERT。`created_at == updated_at = DateTime.UtcNow`。`t_print_queue` のみ操作し `t_order_reports` にアクセスしない
-    - 必須項目（`module`/`reportType`/`referenceCode`）が空白のみなら `ArgumentException`。`printPayload` と `pdfPath` が両方空白のみなら `ArgumentException`。`copies` は 1 未満なら 1 に正規化
+    - 必須項目（`module`/`reportType`/`referenceCode`/`pdfPath`）が空白のみなら `ArgumentException`。`pdf_path` は必須（非空）で `printPayload` 引数は持たない。`copies` は 1 未満なら 1 に正規化
     - _Requirements: 1.5, 4.1, 4.2, 4.3, 4.4_
 
   - [ ]* 3.2 投入不変条件のプロパティテスト
@@ -61,9 +61,9 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - EF Core InMemory で `EnqueueAsync` を検証（1件追加・print_status=1・入力一致・copies正規化・created_at==updated_at・他テーブル不操作）。`// Feature: print-platform, Property 1` タグ、100イテレーション以上
 
   - [ ]* 3.3 投入拒否のプロパティテスト
-    - **Property 2: 必須項目欠落・出力ソース欠落の投入は拒否される**
+    - **Property 2: 必須項目欠落（pdf_path 含む）の投入は拒否される**
     - **Validates: Requirements 4.2, 4.3**
-    - 必須欠落 または payload・pdf_path 両方空白の入力で `ArgumentException`・テーブル不変を検証。`// Feature: print-platform, Property 2` タグ、100イテレーション以上
+    - 必須項目（module/reportType/referenceCode/pdfPath）のいずれかが空白のみの入力で `ArgumentException`・テーブル不変を検証。`// Feature: print-platform, Property 2` タグ、100イテレーション以上
 
   - [x] 3.4 `AddCommonModule` に DI 登録を追加
     - `CommonModule/Extensions/CommonModuleExtensions.cs`（`AddCommonModule`）に `services.AddScoped<IPrintQueueService, PrintQueueService>()` を追加（`ISmtpQueueService` と対・Scoped）
@@ -97,15 +97,15 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - 経過時間（負・0〜数分・境界30秒ちょうど・null）を生成し、Alive 判定が `経過<=30秒` と同値・null は「応答なし」を検証。`// Feature: print-platform, Property 6` タグ、100イテレーション以上
 
   - [x] 4.6 再出力 `OnPostReprintAsync` を実装
-    - 完了(3)・エラー(9) かつ（`print_payload` または `pdf_path` の一方が非空）のジョブのみ `print_status=1` に戻し、`picked_at`/`printed_at`/`error_message` をクリア、`updated_at=UtcNow`
-    - 待機(1)・処理中(2)・対象外(0) は不正遷移として拒否し通知。payload・pdf_path ともに無しは「印刷ソースが無いため再出力できない」旨を通知
+    - 完了(3)・エラー(9) かつ `pdf_path` が非空のジョブのみ `print_status=1` に戻し、`picked_at`/`printed_at`/`error_message` をクリア、`updated_at=UtcNow`
+    - 待機(1)・処理中(2)・対象外(0) は不正遷移として拒否し通知。`pdf_path` 無しは「印刷ソースが無いため再出力できない」旨を通知
     - `DbUpdateConcurrencyException` を捕捉し「他のユーザーが先に更新しました。画面を再読み込みしてください。」を通知
     - _Requirements: 2.2, 2.3, 9.4, 9.5_
 
   - [ ]* 4.7 再出力遷移のプロパティテスト
-    - **Property 3: 再出力は完了・エラーかつ出力ソース有りのみを待機へ戻し、それ以外は不変**
+    - **Property 3: 再出力は完了・エラーかつ pdf_path 有りのみを待機へ戻し、それ以外は不変**
     - **Validates: Requirements 9.4, 9.5**
-    - print_status∈{0,1,2,3,9}×payload/pdf_path 有無を生成し、3/9 かつ出力ソース有りのみ 1 へ遷移＋クリア、他は不変を検証。`// Feature: print-platform, Property 3` タグ、100イテレーション以上
+    - print_status∈{0,1,2,3,9}×pdf_path 有無を生成し、3/9 かつ pdf_path 有りのみ 1 へ遷移＋クリア、他は不変を検証。`// Feature: print-platform, Property 3` タグ、100イテレーション以上
 
   - [x] 4.8 監視画面ビュー `Index.cshtml` を実装
     - Area "Common" 共通スタイル（Bootstrap 5 + vanilla JS、site.css は変更しない）で一覧・フィルタ・サマリ・死活表示・再出力操作・error_message 表示を描画（`Common_SmtpMonitor` と一貫）
@@ -114,33 +114,28 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 - [ ] 5. チェックポイント - CommonModule のテストを通す
   - すべてのテスト（Property 1〜6）が通ることを確認し、不明点があればユーザーに確認する。
 
-- [ ] 6. PrintAgent（別ソリューション）のエンティティ・DbContext・接続先変更
-  - [ ] 6.1 Worker 側エンティティ `TPrintQueue` を実装（`TOrderReport` を置換）
+- [x] 6. PrintAgent（別ソリューション）のエンティティ・DbContext・接続先変更
+  - [x] 6.1 Worker 側エンティティ `TPrintQueue` を実装（`TOrderReport` を置換）
     - `\\OJIADM23120073\Labs\WindowsService\PrintAgent\Models\` に `t_print_queue` へマップする `TPrintQueue` を新規実装（PrintAgent 名前空間）
     - `TOrderReport` からの差分: `module` 追加・`pdf_path` 追加・`fax_status` 削除・`row_version`（`[Timestamp]`）追加・完了日時を `printed_at` に一本化・`printer_name`/`error_message` 継続
     - CommonModule 側 `TPrintQueue` と同一テーブル・同一列にマップされるようスキーマを一致させる
     - _Requirements: 1.6, 2.1, 5.1, 7.1_
 
-  - [ ] 6.2 `PrintAgentDbContext` を改修
+  - [x] 6.2 `PrintAgentDbContext` を改修
     - `DbSet<TOrderReport> OrderReports` を廃し `DbSet<TPrintQueue> PrintQueue`（`ToTable("t_print_queue")`）へ差し替え
     - `MPrintAgentControl`（`ToTable("m_print_agent_control")`）は継続（読取先 DB が db_common_dev に変わる）
     - _Requirements: 5.1, 5.2, 6.1_
 
-  - [ ] 6.3 接続文字列を `db_common_dev` へ変更
+  - [x] 6.3 接続文字列を `db_common_dev` へ変更
     - `PrintAgent/appsettings.json` の `ConnectionStrings:CloudDb` を `db_material_dev` から `db_common_dev` へ変更（heartbeat 先も db_common_dev）
     - _Requirements: 5.1, 5.2, 6.1_
 
-- [ ] 7. PrintAgent Worker（デュアルモード・状態遷移・row_version 実効化）
-  - [ ] 7.1 出力ソース選択（デュアルモード）と状態遷移を実装
-    - `PrintJobWorker` の待機取得条件を「`print_status=1` かつ（`print_payload` 非 NULL または `pdf_path` 非 NULL）」に更新
-    - 出力ソース選択: `pdf_path` 非空ならその PDF を直接サイレント印刷（生成しない）、空なら `print_payload` から `PdfGeneratorService` で生成して印刷
-    - 取得時 `1→2`・`picked_at` 設定、完了時 `print_status=3`・`printed_at=UtcNow`（旧 completed_at/print_at 二重設定を廃止）、失敗時 `print_status=9`・`error_message`（500字切詰）。PDF生成・SumatraPDF印刷ロジック自体は不変
+- [ ] 7. PrintAgent Worker（印刷専用・状態遷移・row_version 実効化）
+  - [x] 7.1 印刷専用（pdf_path サイレント印刷）と状態遷移を実装
+    - `PrintJobWorker` の待機取得条件を「`print_status=1` かつ `pdf_path IS NOT NULL`」に更新
+    - 印刷ソースは `pdf_path` の生成済み PDF のみ。`SilentPrintService`（SumatraPDF）で当該 PDF を直接サイレント印刷する（PDF 生成は行わない）。従来の `print_payload` からの生成分岐および `PdfGeneratorService`/`IPdfGeneratorService`・`Documents/` は PrintAgent から退役する（投入側＝MaterialModule へ移管・別 spec 所有）
+    - 取得時 `1→2`・`picked_at` 設定、完了時 `print_status=3`・`printed_at=UtcNow`（旧 completed_at/print_at 二重設定を廃止）、失敗時 `print_status=9`・`error_message`（500字切詰。`pdf_path` 指定ファイル不存在を含む）。SumatraPDF によるサイレント印刷ロジック自体は不変
     - _Requirements: 5.3, 5.4, 5.5, 5.6, 1.6_
-
-  - [ ]* 7.2 出力ソース選択のプロパティテスト
-    - **Property 8: 出力ソース選択は pdf_path を優先する（デュアルモード）**
-    - **Validates: Requirements 5.6**
-    - pdf_path 有無×payload 有無の全組み合わせを生成し、pdf_path 非空→直接印刷・空→生成印刷を一意選択（pdf_path 非空時 payload 有無は不問）を純粋関数として検証。`// Feature: print-platform, Property 8` タグ、100イテレーション以上（CommonModule.Tests）
 
   - [ ]* 7.3 状態遷移単調性のプロパティテスト
     - **Property 7: 印刷ステータス遷移の単調性**
@@ -160,24 +155,45 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 - [ ] 8. チェックポイント - PrintAgent/統合のテストを通す
   - すべてのテスト（Property 7〜9）が通ることを確認し、不明点があればユーザーに確認する。実印刷・実デプロイはユーザー側。
 
-- [ ] 9. カットオーバー（移行・切替）とSpec同期
-  - [ ] 9.1 未処理印刷データの移行 SQL を作成
+- [x] 9. カットオーバー（移行・切替）とSpec同期
+  - [x] 9.1 未処理印刷データの移行 SQL を作成
     - `CommonModule/docs/sql/` に `t_order_reports` の `print_status∈{1,2}` を `t_print_queue` へ移行する INSERT スクリプトを作成
-    - 列対応: `module` 既定 `material`／`pdf_path` 無ければ NULL／`completed_at`/`print_at`→`printed_at`／`fax_status` は移行しない／`row_version` は新規採番。`print_status=2` の扱い（1へ戻す or 除外）はコメントで運用判断を明記
+    - 列対応: `module` 既定 `material`／`pdf_path` は必須（NOT NULL）＝残ジョブは送信側（MaterialModule）が生成した pdf_path を付与、用意できない残ジョブは移行対象外／運用判断で除外／`completed_at`/`print_at`→`printed_at`／`fax_status`・`print_payload` は移行しない（`t_print_queue` に該当列は無い）／`row_version` は新規採番。`print_status=2` の扱い（1へ戻す or 除外）はコメントで運用判断を明記
     - 取り残しゼロ照合（移行前未処理件数＝移行後追加件数）の確認クエリを併記。スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う・`t_order_reports` は削除せず保全」旨を明記
     - _Requirements: 11.2, 11.4, 11.5, 3.2_
 
-  - [ ] 9.2 Spec の最終整合確認（単一正本）
+  - [x] 9.2 Spec の最終整合確認（単一正本）
     - `.kiro/specs/CommonModule/print-platform/` の requirements.md・design.md・tasks.md の整合を確認（モジュール別コピーは廃止済み・同期不要）
     - _Requirements: （プロジェクトルール: 単一正本）_
 
 - [ ] 10. 最終チェックポイント - 全テストを通す
   - すべてのテスト（Property 1〜9）が通ることを確認し、不明点があればユーザーに確認する。カットオーバー（③投入先切替は dispatch-monitoring-consolidation 所有・④読取先切替はユーザーデプロイ）の実施順序を確認する。
 
+- [x] 11. 設計改訂に伴う CommonModule 実装是正（印刷専用・pdf_path 必須・print_payload 廃止）
+  - [x] 11.1 `TPrintQueue` から `print_payload` プロパティを削除
+    - `CommonModule/Data/Entities/TPrintQueue.cs` から `print_payload`（`PrintPayload`）プロパティを削除し、列構成を design「Data Models」（print_payload 無し・pdf_path 必須）に一致させる
+    - _Requirements: 1.2, 1.6_
+
+  - [x] 11.2 `IPrintQueueService`/`PrintQueueService` を pdf_path 必須へ是正
+    - `IPrintQueueService`/`PrintQueueService`（`CommonModule/Services/`）の `EnqueueAsync` から `printPayload` 引数を削除し、`pdfPath` を必須（非空・空なら `ArgumentException`）に変更（design「Components and Interfaces」の契約に一致）
+    - _Requirements: 4.2, 4.3_
+
+  - [x] 11.3 DDL から `print_payload` 列を削除し `pdf_path` を NOT NULL に
+    - `CommonModule/docs/sql/create_t_print_queue.sql` から `print_payload` 列を削除し、`pdf_path` を NOT NULL に変更
+    - _Requirements: 1.5, 1.6_
+
+  - [x] 11.4 `Common_PrintMonitor` の再出力条件を pdf_path 基準へ是正
+    - `Common_PrintMonitor` の `OnPostReprintAsync` の再出力可否判定から payload 参照を削除し、`pdf_path` が非空であることのみを条件とする（3/9 かつ pdf_path 有り）
+    - _Requirements: 9.5_
+
+  - [x] 11.5 テーブル定義書・ER図を print_payload 削除・pdf_path NOT NULL に追随
+    - `.kiro/docs/db/テーブル定義書.md`・`.kiro/docs/db/ER図.md` の `t_print_queue` から `print_payload` を削除し、`pdf_path` を NOT NULL に更新
+    - _Requirements: 1.1_
+
 ## Notes
 
 - `*` 付きサブタスクは省略可能（テスト）で、MVP優先時はスキップできる。コア実装タスクには `*` を付けていない。
-- Correctness Property 1〜8 は CommonModule.Tests の PBT（最低100イテレーション）、Property 9 は並行統合テストで実装する（design「Testing Strategy」準拠）。Property 7・8 は状態遷移／出力ソース選択の純粋規則として CommonModule.Tests に置く。
+- Correctness Property 1〜7 は CommonModule.Tests の PBT（最低100イテレーション）、Property 9 は並行統合テストで実装する（design「Testing Strategy」準拠）。Property 7 は状態遷移の純粋規則として CommonModule.Tests に置く。
 - DBスキーマの作成・実行、ビルド、テスト実行、実印刷、PrintAgent の再デプロイはユーザー側で実施する（タスク内で実行しない）。
 - 投入先切替（PrintJobService → IPrintQueueService）と旧 Monitor 廃止は `dispatch-monitoring-consolidation` が所有する（本 spec はスキーマ契約・CommonModule 受け口・PrintAgent 読取先・Common_PrintMonitor・カットオーバー定義を所有）。
 - MainWeb・AuthModule は変更しない。成果物は CommonModule 内で完結し、Spec は `.kiro/specs/CommonModule/` に単一正本で配置する。
@@ -193,10 +209,11 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     { "id": 3, "tasks": ["3.1", "4.1", "4.4"] },
     { "id": 4, "tasks": ["3.2", "3.3", "3.4", "4.2", "4.3", "4.5", "4.6"] },
     { "id": 5, "tasks": ["4.7", "4.8"] },
-    { "id": 6, "tasks": ["6.1", "6.2", "6.3"] },
-    { "id": 7, "tasks": ["7.1", "7.4"] },
-    { "id": 8, "tasks": ["7.2", "7.3", "7.5"] },
-    { "id": 9, "tasks": ["9.1", "9.2"] }
+    { "id": 6, "tasks": ["11.1", "11.2", "11.3", "11.4", "11.5"] },
+    { "id": 7, "tasks": ["6.1", "6.2", "6.3"] },
+    { "id": 8, "tasks": ["7.1", "7.4"] },
+    { "id": 9, "tasks": ["7.3", "7.5"] },
+    { "id": 10, "tasks": ["9.1", "9.2"] }
   ]
 }
 ```
