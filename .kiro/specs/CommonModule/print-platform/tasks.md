@@ -12,7 +12,8 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
 - DBスキーマの作成・実行はユーザー側で行う。タスクでは DDL SQL ファイル（`CommonModule/docs/sql/`）を作成するところまでを行い、実行はユーザーに依頼する。
 - ビルド・テスト実行・実印刷はユーザー側で行う（タスク内でビルド・実行・実印刷はしない）。
 - MainWeb・AuthModule のソース・設定は変更しない（参照のみ）。成果物は CommonModule 内で完結させる（R12.1・R12.2）。
-- Correctness Property 1〜7 は CommonModule.Tests の PBT（FsCheck/CsCheck 等、最低100イテレーション）で実装し、各テストに `// Feature: print-platform, Property {n}` タグを付す。Property 9 は並行統合テスト（1〜2例）で実装する。
+- Correctness Property 1〜8（Property 8＝プリンタ解決の決定性）は CommonModule.Tests の PBT（FsCheck/CsCheck 等、最低100イテレーション）で実装し、各テストに `// Feature: print-platform, Property {n}` タグを付す。Property 8 の `m_printer` upsert 副作用・Property 9 は並行/統合テスト（1〜2例）で実装する。
+- 本改訂（task group 12）で `output_type` 列を廃止（投入側ゲート化, D7）し、プリンタマスタ `m_printer`（起動時自動 upsert・自動無効化, R14）と PrintAgent のプリンタ解決・存在チェック（D8）を追加する。
 - エラー列の物理名は `error_message` に統一（requirements 追随更新済み）。`m_print_agent_control` は 1行運用・単一Writer のため `row_version` を付与しない（`m_smtp_agent_control` とのパリティ＝ルールの明示的例外）。
 - Spec は `.kiro/specs/CommonModule/print-platform/` に単一正本として管理する（モジュール別コピーは持たない）。
 
@@ -190,12 +191,86 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - `.kiro/docs/db/テーブル定義書.md`・`.kiro/docs/db/ER図.md` の `t_print_queue` から `print_payload` を削除し、`pdf_path` を NOT NULL に更新
     - _Requirements: 1.1_
 
+- [ ] 12. 新Print仕様改訂（output_type 廃止・投入側ゲート・プリンタ解決・m_printer マスタ）
+  - [ ] 12.1 `TPrintQueue`（CommonModule）から `output_type` を削除
+    - `CommonModule/Data/Entities/TPrintQueue.cs` から `output_type`（`OutputType`）プロパティを削除し、列構成を design「Data Models」（output_type 無し, D7）に一致させる
+    - _Requirements: 1.9_
+
+  - [ ] 12.2 `IPrintQueueService`/`PrintQueueService` から `outputType` 引数を削除
+    - `IPrintQueueService`/`PrintQueueService`（`CommonModule/Services/`）の `EnqueueAsync` から `outputType` 引数を削除（シグネチャ変更・破壊的。design「Components and Interfaces」の投入契約に一致）。呼び出し元の是正は `dispatch-monitoring-consolidation` が所有
+    - _Requirements: 4.7_
+
+  - [ ] 12.3 DDL から `output_type` 列を削除（新規適用SQLも用意）
+    - `CommonModule/docs/sql/create_t_print_queue.sql` から `output_type` 列を削除
+    - 既存DBに対する `ALTER TABLE t_print_queue DROP COLUMN output_type` の適用SQL（またはコメント手順）を併記。実適用はユーザーが `db_common_dev` に対して行う旨を明記
+    - _Requirements: 1.9_
+
+  - [ ] 12.4 `Common_PrintMonitor` の `output_type` 参照を撤去
+    - `Common_PrintMonitor`（PageModel／ビュー）に `output_type` を参照する列・フィルタ・表示が残っていないか確認し、あれば撤去する
+    - _Requirements: 1.9_
+
+  - [ ] 12.5 テーブル定義書・ER図を output_type 削除・print_status 追随に更新
+    - `.kiro/docs/db/テーブル定義書.md`・`.kiro/docs/db/ER図.md` の `t_print_queue` から `output_type` を削除し、print_status を 1/2/3/9 に追随
+    - _Requirements: 1.9_
+
+  - [ ] 12.6 エンティティ `MPrinter` を追加し `CommonDbContext` に DbSet を追加
+    - `CommonModule/Data/Entities/MPrinter.cs` を `[Table("m_printer")]`／`[Column]`／`[Key]`／`[DatabaseGenerated(Identity)]`／`[Timestamp]` の作法で実装。列: id/machine_name/printer_name/is_default/is_active/last_seen_at/created_at/updated_at/row_version。is_default・is_active は NOT NULL
+    - `CommonModule/Data/CommonDbContext.cs` に `DbSet<MPrinter> Printers` を追加。一意 (machine_name, printer_name)
+    - _Requirements: 14.1, 14.2, 14.8_
+
+  - [ ] 12.7 `m_printer` の CREATE TABLE DDL を作成
+    - `CommonModule/docs/sql/` に `m_printer` の CREATE TABLE スクリプトを作成（db_common_dev・一意キー `UQ_m_printer_machine_printer`(machine_name, printer_name)・`IX_m_printer_machine_name`(machine_name)）
+    - スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う」旨をコメントで明記
+    - _Requirements: 14.1, 14.2_
+
+  - [ ] 12.8 テーブル定義書・ER図に `m_printer` を追記
+    - `.kiro/docs/db/テーブル定義書.md` に `m_printer` の列名・日本語名・型・備考を追記
+    - `.kiro/docs/db/ER図.md` に `m_printer`（db_common_dev 配置）を追記
+    - _Requirements: 14.1_
+
+  - [ ] 12.9 PrintAgent `TPrintQueue` から `output_type` を削除
+    - PrintAgent（別ソリューション `\\OJIADM23120073\Labs\WindowsService\PrintAgent`）の `TPrintQueue` から `output_type` を削除し、CommonModule 側 `TPrintQueue` と同一テーブル・同一列にマップされるよう一致させる
+    - _Requirements: 1.9, 5.6_
+
+  - [ ] 12.10 PrintAgent `PrintJobWorker` の印刷可否ゲートを撤去
+    - `PrintJobWorker` から `output_type` による印刷可否判定（`shouldPrint`）を撤去し、取得したジョブを全て印刷する（印刷対象判定は投入側が実施済み・キューには印刷対象のみが存在, D7）
+    - _Requirements: 5.6_
+
+  - [ ] 12.11 PrintAgent `PrintJobWorker` にプリンタ解決・存在チェックを実装
+    - 出力先プリンタを `printer_name ?? 既定プリンタ` で解決する
+    - `printer_name` が指定されており、かつ印刷時点の稼働機のリアルタイム実列挙（`System.Drawing.Printing.PrinterSettings.InstalledPrinters`）に存在しない場合は、印刷を試行せず `print_status=9`・`error_message`「指定プリンタが存在しません」を設定する。存在判定の正は実列挙であり `m_printer` マスタではない（D8）
+    - _Requirements: 5.8, 5.9, 14.5_
+
+  - [ ] 12.12 PrintAgent エンティティ `MPrinter` を追加し `PrintAgentDbContext` に DbSet を追加
+    - PrintAgent 名前空間に `m_printer` へマップする `MPrinter`（upsert 用マッピング）を実装し、CommonModule 側 `MPrinter` と同一テーブル・同一列に一致させる
+    - `PrintAgentDbContext` に `DbSet<MPrinter>`（`ToTable("m_printer")`）を追加
+    - _Requirements: 14.3_
+
+  - [ ] 12.13 PrintAgent 起動時プリンタ列挙→`m_printer` upsert サービスを実装
+    - 起動時サービス（`IHostedService` 等）で `System.Drawing.Printing.PrinterSettings.InstalledPrinters` を列挙し `m_printer`（db_common_dev）へ upsert する
+    - 既定プリンタ（`new PrinterSettings().PrinterName`）は `is_default=1`、現存プリンタは `is_active=1`（存在すれば `last_seen_at`(UTC)・`updated_at` 更新、無ければ追加）
+    - 当該機（machine_name）の今回列挙に無い行は `is_active=0` に自動無効化する。他機（別 machine_name）の行は変更しない
+    - _Requirements: 14.3, 14.4, 14.6, 14.7_
+
+  - [ ]* 12.14 プリンタ解決の決定性のプロパティテスト
+    - **Property 8: プリンタ解決の決定性**
+    - **Validates: Requirements 5.8, 5.9, 14.5**
+    - `printer_name`（NULL/指定）× 実インストール集合を生成し、NULL→既定プリンタ・指定かつ集合に含む→当該プリンタ・指定かつ集合に含まない→印刷不可（status 9 エラー）を純粋関数で検証。`// Feature: print-platform, Property 8` タグ、100イテレーション以上（CommonModule.Tests）
+
+  - [ ]* 12.15 既存 Property テスト（1/3/7）の print_status 集合を追随更新
+    - Property 1・3・7 の print_status 生成集合を {1,2,3,9}（0 を削除）に更新し、output_type 廃止・0=対象外 撤去に整合させる
+    - _Requirements: 1.4_
+
+  - [ ]* 12.16 m_printer upsert・自動無効化の統合テスト
+    - 起動時 upsert（追加・`last_seen_at` 更新）と自動無効化（当該機の今回列挙に無い行を `is_active=0`・他機は不変）を 1〜2 例で検証（実DB/InMemory）
+    - _Requirements: 14.3, 14.7_
+
 ## Notes
 
 - `*` 付きサブタスクは省略可能（テスト）で、MVP優先時はスキップできる。コア実装タスクには `*` を付けていない。
-- Correctness Property 1〜7 は CommonModule.Tests の PBT（最低100イテレーション）、Property 9 は並行統合テストで実装する（design「Testing Strategy」準拠）。Property 7 は状態遷移の純粋規則として CommonModule.Tests に置く。
+- Correctness Property 1〜8 は CommonModule.Tests の PBT（最低100イテレーション）、Property 8 の `m_printer` upsert 副作用・Property 9 は統合/並行テストで実装する（design「Testing Strategy」準拠）。Property 7 は状態遷移の純粋規則、Property 8 はプリンタ解決の決定性（純粋関数）として CommonModule.Tests に置く。
 - DBスキーマの作成・実行、ビルド、テスト実行、実印刷、PrintAgent の再デプロイはユーザー側で実施する（タスク内で実行しない）。
-- 投入先切替（PrintJobService → IPrintQueueService）と旧 Monitor 廃止は `dispatch-monitoring-consolidation` が所有する（本 spec はスキーマ契約・CommonModule 受け口・PrintAgent 読取先・Common_PrintMonitor・カットオーバー定義を所有）。
+- 投入先切替（PrintJobService → IPrintQueueService）と旧 Monitor 廃止は `dispatch-monitoring-consolidation` が所有する（本 spec はスキーマ契約・CommonModule 受け口・PrintAgent 読取先・Common_PrintMonitor・カットオーバー定義を所有）。task group 12 の `EnqueueAsync` シグネチャ変更（`outputType` 引数削除）に伴う呼び出し元の是正も `dispatch-monitoring-consolidation` が所有する。
 - MainWeb・AuthModule は変更しない。成果物は CommonModule 内で完結し、Spec は `.kiro/specs/CommonModule/` に単一正本で配置する。
 
 ## Task Dependency Graph
@@ -213,7 +288,11 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     { "id": 7, "tasks": ["6.1", "6.2", "6.3"] },
     { "id": 8, "tasks": ["7.1", "7.4"] },
     { "id": 9, "tasks": ["7.3", "7.5"] },
-    { "id": 10, "tasks": ["9.1", "9.2"] }
+    { "id": 10, "tasks": ["9.1", "9.2"] },
+    { "id": 11, "tasks": ["12.1", "12.3", "12.5", "12.6", "12.7", "12.9", "12.12"] },
+    { "id": 12, "tasks": ["12.2", "12.4", "12.8", "12.10", "12.13"] },
+    { "id": 13, "tasks": ["12.11"] },
+    { "id": 14, "tasks": ["12.14", "12.15", "12.16"] }
   ]
 }
 ```
