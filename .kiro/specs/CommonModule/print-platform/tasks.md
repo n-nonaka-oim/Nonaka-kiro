@@ -55,12 +55,12 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - 必須項目（`module`/`reportType`/`referenceCode`/`pdfPath`）が空白のみなら `ArgumentException`。`pdf_path` は必須（非空）で `printPayload` 引数は持たない。`copies` は 1 未満なら 1 に正規化
     - _Requirements: 1.5, 4.1, 4.2, 4.3, 4.4_
 
-  - [ ]* 3.2 投入不変条件のプロパティテスト
+  - [x]* 3.2 投入不変条件のプロパティテスト
     - **Property 1: 投入は t_print_queue に待機ジョブを1件追加し入力を保持する**
     - **Validates: Requirements 1.5, 4.1, 4.2, 4.3**
     - EF Core InMemory で `EnqueueAsync` を検証（1件追加・print_status=1・入力一致・copies正規化・created_at==updated_at・他テーブル不操作）。`// Feature: print-platform, Property 1` タグ、100イテレーション以上
 
-  - [ ]* 3.3 投入拒否のプロパティテスト
+  - [x]* 3.3 投入拒否のプロパティテスト
     - **Property 2: 必須項目欠落（pdf_path 含む）の投入は拒否される**
     - **Validates: Requirements 4.2, 4.3**
     - 必須項目（module/reportType/referenceCode/pdfPath）のいずれかが空白のみの入力で `ArgumentException`・テーブル不変を検証。`// Feature: print-platform, Property 2` タグ、100イテレーション以上

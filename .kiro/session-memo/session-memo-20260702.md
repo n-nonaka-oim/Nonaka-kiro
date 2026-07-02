@@ -249,3 +249,37 @@
 - 任意PBT（3.2/3.3/4.2/4.3/4.5/4.7/7.3/7.5）・CP 5/8/10。
 - 実行系（ユーザー）: DDL適用・実印刷・カットオーバー（dispatch-monitoring-consolidation 前提）。
 - 未コミット: PrintAgent/docs（spec/requirements/design/tasks 改訂ノート・別git）・Nonaka/.kiro（本memo）。
+
+---
+
+## PrintAgent クリーンアップ完了（退役コード削除・印刷専用の最小構成へ）
+
+- コミット済み: PrintAgent `121efdf`（docs改訂ノート）／Nonaka `a96568d`（memo）。
+- **退役実施（PrintAgent・別git）**:
+  - `Program.cs`: QuestPDF ライセンス設定・`using QuestPDF.Infrastructure;`・`AddSingleton<IPdfGeneratorService,PdfGeneratorService>()` 除去。ISilentPrintService/DbContext/AddHostedService<PrintJobWorker> は維持。
+  - `PrintAgent.csproj`: `QuestPDF`・`QRCoder` PackageReference 除去（EF Core/Hosting系維持）。
+  - 削除8ファイル: Services/IPdfGeneratorService.cs・PdfGeneratorService.cs／Documents/IReportDocument.cs・OrderApprovalDocument.cs・ReceivingSlipDocument.cs・FactoryInvoiceDocument.cs（Documents/空）／Models/PrintPayloadDto.cs・TOrderReport.cs。
+  - grep で退役型名・QuestPDF/QRCoder の残参照なし。Program.cs/PrintJobWorker.cs 診断クリア。
+- PrintAgent は印刷専用の最小構成（ポーリング→pdf_path サイレント印刷→状態遷移→heartbeat）。
+- ⏳ ユーザー: PrintAgent.sln 再ビルドで確認。未コミット: PrintAgent（Program.cs/csproj/削除8）。
+
+### print-platform 残（任意・検証・実行系のみ）
+- 任意PBT: 3.2/3.3/4.2/4.3/4.5/4.7・7.3/7.5。検証CP: 5/8/10。7.4 heartbeat（実質OK・未チェック）。
+- 実行系（ユーザー）: DDL適用（t_print_queue/m_print_agent_control）・実印刷・カットオーバー（dispatch-monitoring-consolidation 前提）。
+- コア実装＋関連ドキュメント反映＋クリーンアップ 完了。
+
+---
+
+## 任意PBT 着手：PrintQueueService（3.2/3.3）完了
+
+- PrintAgent クリーンアップ コミット済み: PrintAgent `1df9156`（10ファイル・578行削除）。PrintAgent.sln ビルドOK（ユーザー確認）。
+- CommonModule.Tests のPBT作法確認: FsCheck 2.16.6・FsCheck.Xunit・InMemory 8.0.23・`[Property(MaxTest=100)]`・一意DB名・`// Feature:` タグ。参照＝`Services/SmtpQueueServicePropertyTests.cs`、`Pages/SmtpMonitor/*`（Alive/List/Resend/ErrorMessage＋TestHelper）。
+- **作成: `clnCoCore/CommonModule.Tests/Services/PrintQueueServicePropertyTests.cs`**（診断クリア）:
+  - 3.2 Property 1（投入は1件追加・print_status=1・入力保持・copies正規化・created_at==updated_at・他テーブル不操作）。
+  - 3.3 Property 2（必須 module/reportType/referenceCode/**pdfPath** のいずれか空白→ArgumentException・テーブル不変。null! で null 注入・AggregateException/ArgumentException 両捕捉）。
+- tasks 3.2/3.3＝[x]（任意）。テスト実行はユーザー側（未実行のため pass/fail 未記録）。
+
+### 残（任意PBT・検証・実行系）
+- 監視画面PBT（SMTP対応あり）: 4.2 フィルタ(P4)／4.3 サマリ(P5)／4.5 死活(P6)／4.7 再出力(P3)。Worker: 7.3 状態遷移(P7)／7.5 二重取得統合(P9)。
+- 検証CP 5/8/10。実行系（DDL適用・実印刷・カットオーバー）。
+- 未コミット: CommonModule.Tests（PrintQueueServicePropertyTests.cs）・Nonaka/.kiro（tasks 3.2/3.3・memo）。
