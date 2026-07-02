@@ -50,12 +50,12 @@
     - `MaterialModule.Tests` に例示テスト（フルパスが `Path.Combine(basePath, fileName)` と一致・非空・`.pdf` 終端）
     - _Requirements: 9.1, 9.2_
 
-- [ ] 3. `PrintJobService` 改修（PDF生成→保存→pdf_path付与→`t_print_queue`投入）
-  - [ ] 3.1 純関数 `ExtractGroupKey`/`BuildPdfFileName` を切り出し
+- [x] 3. `PrintJobService` 改修（PDF生成→保存→pdf_path付与→`t_print_queue`投入）
+  - [x] 3.1 純関数 `ExtractGroupKey`/`BuildPdfFileName` を切り出し
     - `PrintJobService` 内に `ExtractGroupKey`（発注番号の先頭3セグメント抽出、`DispatchEnqueueService` と同一規則）と `BuildPdfFileName`（`{reportType}_{referenceCode}_{yyyyMMddHHmmssfff}.pdf`）を `internal static` 純関数として実装／切り出し（テスト容易性確保）
     - _Requirements: 4.2, 8.3_
 
-  - [ ] 3.2 `CreateOrderApprovalJobsAsync` を投入先変更に改修
+  - [x] 3.2 `CreateOrderApprovalJobsAsync` を投入先変更に改修
     - 依存注入に `IOrderPdfService`（再利用）・`IPrintQueueService`（CommonModule・新規）・`IPrintOutputPathService`（新規）・`ILogger` を追加
     - 手順: `OrderNo` 採番済みのみ対象 → グループ化 → グループ単位 try/catch → `GenerateGroupOrderPdfAsync(groupKey)` で PDF 生成（再利用）→ `GetBasePathAsync`＋`BuildFullPath` で保存先確定・`Directory.CreateDirectory`＋`File.WriteAllBytesAsync` → `EnqueueAsync("material","order_approval",groupKey,outputType,fullPath,printerName:null,copies:1)`
     - 禁止事項の遵守: `OrderReports.Add(...)` を行わない（R4.4）、`FaxStatus` を設定しない（R1.1）、`PrintPayload`(JSON) を組み立てない・投入しない（R4.5）

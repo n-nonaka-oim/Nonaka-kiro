@@ -566,3 +566,26 @@
 - **2.2*** BuildFullPath 例示テスト（任意・MaterialModule.Tests）。
 - **3.1** `PrintJobService` に純関数 `ExtractGroupKey`（発注番号先頭3セグメント・DispatchEnqueueService と同一規則）／`BuildPdfFileName`（`{reportType}_{referenceCode}_{yyyyMMddHHmmssfff}.pdf`）を internal static で切り出し。
 - 未コミット: MaterialModule（2.1 Services 2ファイル・Extensions）・Nonaka/.kiro（tasks 2.1・memo）。
+
+---
+
+## タスク3.1・3.2 完了（wave2/3・PrintJobService 中核改修）＝親3完了
+
+- **3.1** `PrintJobService` に純関数 `internal static` を整備: `ExtractGroupKey`（発注番号先頭3セグメント・DispatchEnqueueService と同一規則）／`BuildPdfFileName(reportType, referenceCode, now)`＝`{reportType}_{referenceCode}_{yyyyMMddHHmmssfff}.pdf`（design のファイル名規則・reportType 接頭辞形）。
+- **3.2** `CreateOrderApprovalJobsAsync` を全面改修（公開シグネチャ不変）:
+  - primary ctor 注入: `MaterialDbContext`・`IOrderPdfService`・`IPrintQueueService`(CommonModule)・`IPrintOutputPathService`・`ILogger<PrintJobService>`。`IMasterService` 除去。
+  - 手順: OrderNo 採番済みのみ→ExtractGroupKey グループ化→グループ単位 try/catch（失敗局所化・承認へ非伝播・LogError）→head 出力区分→`GenerateGroupOrderPdfAsync(groupKey)`→`GetBasePathAsync()`→`BuildPdfFileName("order_approval",groupKey,UtcNow)`→`BuildFullPath`→`Directory.CreateDirectory`＋`File.WriteAllBytesAsync`→`EnqueueAsync("material","order_approval",groupKey,outputType,fullPath,printerName:null,copies:1)`→成功数返却。
+  - **禁止事項の遵守**: `OrderReports.Add` なし（R4.4）・`FaxStatus` 設定なし（R1.1）・`PrintPayload`/JsonSerializer/匿名payload/`JoinNonEmpty`/`ReportNotes`/company・JST payload コード除去（R4.5）。print_status は CommonModule 所有のため設定しない。using 調整（System.Text.Json 除去・CommonModule.Services/Logging 追加）。
+- **追加（doc-only）**: `IPrintJobService.cs` の XMLコメントを旧方式X→印刷専用キュー投入・pdf_path・fax_status/PrintPayload 非扱いへ整合（シグネチャ不変）。
+- 診断クリア（PrintJobService.cs・IPrintJobService.cs）。DI依存すべて解決可能（IPrintQueueService=AddCommonModule／IPrintOutputPathService=2.1／IOrderPdfService=既存）。ApprovalService 呼び出し元は不変更。
+- tasks 3.1/3.2＝[x]、**親3＝[x]**。
+
+### 動作確認について（現時点）
+- **ビルド可能**（承認フローの新経路が接続された）。承認→PDF生成→保存→t_print_queue 投入 の一連が実装完了。
+- **実動作の前提（ユーザー実施）**: ①db_material_dev に `create_m_print_output_path.sql` 適用（マスタ＆シード）②db_common_dev の t_print_queue は適用済み ③保存先共有 `\\ojiadm23120073\app_share\PrintAgent` 到達可 ④ビルド。→ 承認実行で t_print_queue に order_approval ジョブが積まれ /Common/PrintMonitor で確認可能。PrintAgent 起動時は実印刷。
+
+### 次（wave4 以降）
+- wave4: **5.1** Material_SmtpMonitor 削除＋fax_status系参照撤去／**5.2** Material_PrintMonitor 削除＋print_status/PrintPayload/PrintAgentControls 参照撤去／**6.1** dbAuthTest m_content 導線解除SQL。
+- ⚠ 5.1/5.2 の参照撤去後、旧 t_order_reports 参照が MaterialModule から消えるか要確認（TOrderReport エンティティは保全＝削除しない）。
+- wave5: 7.x テスト（任意 PBT 1〜3＋例示＋統合）。wave6: 9.1 カットオーバー協調ノート。
+- 未コミット: MaterialModule（3.1/3.2 PrintJobService・IPrintJobService doc）・Nonaka/.kiro（tasks 3.x・memo）。
