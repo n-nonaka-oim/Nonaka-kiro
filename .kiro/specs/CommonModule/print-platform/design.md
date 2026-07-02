@@ -20,6 +20,8 @@
 - **D4（PrintAgent 読取先変更・印刷専用化）**: 接続を db_material_dev → db_common_dev、エンティティを `t_order_reports` → `t_print_queue` に差し替え。PrintAgent は **印刷専用**とし、`pdf_path` の PDF を `SilentPrintService`（SumatraPDF）でサイレント印刷するのみ。**PDF 生成（`PdfGeneratorService`/`IPdfGeneratorService`・`Documents/`）は PrintAgent から退役**し、投入側（MaterialModule）へ移管する（実装は `dispatch-monitoring-consolidation` 所有）。別ソリューション・別デプロイ単位。
 - **D5（カットオーバー）**: DDL → 未処理印刷（print_status 1/2）移行 → 投入先切替（PrintJobService）→ 読取先切替（PrintAgent）。無停止・取り残しなし・可逆。
 - **D6（印刷専用・単一パス）**: 印刷イメージ（PDF）は **投入側（MaterialModule）が生成・保存**し、`pdf_path` で受け渡す。PrintAgent は `pdf_path` の PDF を直接サイレント印刷する（**単一パス**。payload からの生成分岐は持たない）。`print_payload` 列は廃止し、`pdf_path` を必須とする。PDF 生成の実装責務は投入側（MaterialModule／`dispatch-monitoring-consolidation`）が所有し、本 spec は「`t_print_queue` の契約（`pdf_path` が印刷対象 PDF を保持）」と「PrintAgent が印刷専用であること」のみを所有する。
+- **D7（output_type 廃止・投入側ゲート）**: `t_print_queue` から `output_type` 列を廃止する。印刷対象か否かの判定は **投入側（MaterialModule／`dispatch-monitoring-consolidation`）が行い**、キューには印刷対象ジョブのみが投入される。PrintAgent は `output_type` による印刷可否判定を行わず、取得したジョブを **全て印刷する**。（R1.9・R4.7・R5.6 / D6 と整合）
+- **D8（プリンタ解決・存在チェック・プリンタマスタ）**: `printer_name` 未指定（NULL）→ 既定プリンタへ出力する。`printer_name` 指定で稼働機に未インストール → `print_status=9` エラー（`error_message`「指定プリンタが存在しません」、**印刷を試行しない**）。PrintAgent は起動時にインストール済みプリンタを列挙し、`m_printer`（db_common_dev）へ upsert（存在すれば `last_seen_at` 更新、無ければ追加。既定プリンタは `is_default=1`）する。この `m_printer`（稼働機分）が printer_name 存在チェックの基礎となる。（R5.8・R5.9・R14）
 
 ### スコープ外（Non-Goals）
 
@@ -50,7 +52,7 @@
 | DbContext | `CommonDbContext` | `CommonDbContext`（DbSet 追加） |
 | ワーカー | SmtpAgent（別ソリューション） | PrintAgent（別ソリューション, 読取先変更＋印刷専用化） |
 | 監視WEB | `Common_SmtpMonitor`（`/Common/SmtpMonitor`） | `Common_PrintMonitor`（`/Common/PrintMonitor`, 新設） |
-| ステータス | 1待機/2処理中/3完了/9エラー | 0対象外/1待機/2処理中/3完了/9エラー |
+| ステータス | 1待機/2処理中/3完了/9エラー | 1待機/2処理中/3完了/9エラー |
 
 ### コンポーネント関係図
 
@@ -141,12 +143,13 @@ Task<int> EnqueueAsync(
     string module,          // 投入元モジュール識別子（例: "material"）＝必須
     string reportType,      // 帳票種別＝必須
     string referenceCode,   // 参照コード（発注番号等）＝必須
-    int outputType,         // 出力区分
     string pdfPath,         // 生成済みPDFフルパス（印刷対象）＝必須（非空）
     string? printerName,    // プリンタ名（NULL可＝既定プリンタ）
     int copies,             // 部数
     CancellationToken ct = default);   // → 投入されたジョブの id を返す
 ```
+
+> 投入契約に `output_type` は含めない。印刷対象か否かの判定は投入側（`dispatch-monitoring-consolidation`）が行い、`t_print_queue` には印刷対象ジョブのみが投入される（R4.7・R1.9 / D7）。
 
 投入時の振る舞い（契約）:
 
@@ -161,6 +164,13 @@ Task<int> EnqueueAsync(
 > 補足（R4.5・R13.4）: PrintJobService からの実際の呼び出し実装（投入経路の配線）と PDF 生成実装は `dispatch-monitoring-consolidation`（MaterialModule）が所有する。本設計は CommonModule 側の受け口（インターフェース契約＋実装）を提供する。
 
 > 実装同期に関する注記（本改訂による訂正・**tasks 11 で是正済み**）: 本改訂（印刷専用・`print_payload` 廃止・`pdf_path` 必須）に伴い、既に実装済みだった CommonModule 資産—`TPrintQueue` エンティティ（旧 `print_payload` プロパティ）、`PrintQueueService.EnqueueAsync`（旧 payload/pdf_path のいずれか必須の検証・`printPayload` 引数）、DDL（`create_t_print_queue.sql` の `print_payload` 列）、`Common_PrintMonitor` の再出力条件（旧 payload/pdf_path のいずれか）—は本設計に合わせて訂正済み（tasks 11.1〜11.5 完了）。現行実装は `print_payload` を持たず `pdf_path` 必須で本設計と一致する。
+
+> 実装同期に関する注記（本改訂＝`output_type` 廃止・**未是正／tasks フェーズで対応**）: 本改訂（`output_type` 列廃止・投入側ゲート化, D7）に伴い、以下の是正がまだ必要である（**未実施・pending**。本改訂で新たに発生した変更のため tasks フェーズで是正する）:
+> - `TPrintQueue`（CommonModule／PrintAgent 双方）: `output_type` プロパティを削除。
+> - `PrintQueueService.EnqueueAsync`: `outputType` 引数を削除（本節のシグネチャに合わせる）。
+> - DDL（`create_t_print_queue.sql`）: `output_type` 列を削除。
+> - `Common_PrintMonitor`: `output_type` を参照する列／フィルタがあれば撤去（現行一覧には非掲載だが要確認）。
+> - PrintAgent `PrintJobWorker`: `output_type` による印刷可否判定（`shouldPrint`）を撤去し、取得ジョブを全て印刷する（D7 / R5.6）。
 
 #### 5. DI 登録（`AddCommonModule`）
 
@@ -182,7 +192,7 @@ services.AddScoped<IPrintQueueService, PrintQueueService>();
 - **一覧**（R9.1）: module / report_type / reference_code / print_status / copies / picked_at / printed_at / error_message / created_at / updated_at を表示（pdf_path 有無はアイコン表示）。`Id` 降順・ページング（既定 30 件、`Common_SmtpMonitor` と同じ選択肢 10/20/30/50/100）。
 - **フィルタ**（R9.2）: print_status・report_type・キーワード（reference_code の部分一致を基本）・作成日付範囲（`created_at` は UTC 保存のため画面入力 JST を UTC 境界へ変換して比較。`Common_SmtpMonitor` と同一方式）。
 - **サマリ**（R9.3）: print_status 別件数（待機1／処理中2／完了3／エラー9）を全件ベースで集計。
-- **再出力**（R9.4・R9.5・D6）: `OnPostReprintAsync(int id)`。完了(3)・エラー(9) のジョブのみ `print_status=1` に戻し、`picked_at`/`printed_at`/`error_message` をクリア、`updated_at=UtcNow`。待機(1)・処理中(2)・対象外(0) は不正遷移として拒否。対象ジョブが `pdf_path` を保持しない場合は再出力せず「再出力できない」旨を通知（`SmtpMonitor` の `OnPostResendAsync` と対）。
+- **再出力**（R9.4・R9.5・D6）: `OnPostReprintAsync(int id)`。完了(3)・エラー(9) のジョブのみ `print_status=1` に戻し、`picked_at`/`printed_at`/`error_message` をクリア、`updated_at=UtcNow`。待機(1)・処理中(2) は不正遷移として拒否。対象ジョブが `pdf_path` を保持しない場合は再出力せず「再出力できない」旨を通知（`SmtpMonitor` の `OnPostResendAsync` と対）。
 - **死活表示**（R9.6）: `m_print_agent_control` の最終 heartbeat が **30 秒以内**なら「ポーリング中」、超過なら「応答なし」。`Common_SmtpMonitor` の `HeartbeatAliveSeconds = 30` と同値・同ロジック。
 - **スタイル**（R10）: Area "Common" 共通スタイルおよび `Common_SmtpMonitor` と一貫（Bootstrap 5 + vanilla JS）。機能範囲（一覧・フィルタ・サマリ・死活・再出力）を `Common_SmtpMonitor` と同等とする（R9.7）。
 
@@ -213,17 +223,28 @@ services.AddScoped<IPrintQueueService, PrintQueueService>();
 
 #### 4. Worker 本体ロジック（印刷専用・読取先差替えのみ、他は不変）
 
-`PrintJobWorker` のポーリング処理（未処理ジョブ取得 → `print_status 1→2` → サイレント印刷 → `3`／`9` 遷移 → heartbeat 更新）はロジック不変。差分は次の 3 点のみ:
+`PrintJobWorker` のポーリング処理（未処理ジョブ取得 → `print_status 1→2` → サイレント印刷 → `3`／`9` 遷移 → heartbeat 更新）はロジック不変。差分は次の 4 点:
 
 1. 読取先エンティティ／テーブル（`t_print_queue`）。
 2. **印刷ソースの単一化（印刷専用, D6）**: `pdf_path` の PDF を直接サイレント印刷する（PDF 生成は行わない）。従来の `print_payload` からの生成分岐（`PdfGeneratorService`/`Documents/`）は PrintAgent から退役する。
 3. 完了時に `printed_at` へ設定（旧 `completed_at`/`print_at` の二重設定を廃止）。
+4. **印刷可否ゲートの撤去（D7）**: 従来の `output_type` による印刷可否判定（`shouldPrint = output_type ∈ {1,3}` 相当の分岐）を **撤去**する。Worker は取得した **全てのジョブ**の `pdf_path` を無条件にサイレント印刷する（印刷対象判定は投入側が実施済み・キューには印刷対象のみが存在する）。（R5.6 / D7）
 
 - 待機取得: 未処理条件を「`print_status=1` かつ `pdf_path IS NOT NULL`」とする。
 - 取得時: `print_status=2`、`picked_at` 設定。
+- **プリンタ解決（D8 / R5.8・R5.9）**: 出力先プリンタを `printer_name ?? 既定プリンタ` で解決する。`printer_name` が指定されており、かつ稼働機に当該プリンタが **未インストール**の場合は、印刷を **試行せず** `print_status=9`、`error_message`「指定プリンタが存在しません」を設定する（存在チェックは後述「起動時プリンタ列挙とマスタ登録」で得た稼働機分の `m_printer`／実列挙に基づく）。
 - 完了時: `print_status=3`、`printed_at=UtcNow`。
 - 失敗時（印刷失敗・`pdf_path` 不存在等）: `print_status=9`、`error_message` 設定（不変・500 文字切詰）。
 - サイレント印刷（`ISilentPrintService`・SumatraPDF）自体は不変（D4）。PDF 生成（`PdfGeneratorService`/`IPdfGeneratorService`・`Documents/`）は PrintAgent から退役し、投入側（MaterialModule）が所有する。
+
+#### 6. 起動時プリンタ列挙とマスタ登録（D8 / R14）
+
+PrintAgent は **起動時**に稼働機のインストール済みプリンタを列挙し、`m_printer`（db_common_dev）へ upsert する。プリンタ名は機ごとに異なりうるため `machine_name` で稼働機を区別する（R14.6）。
+
+- 列挙元: `System.Drawing.Printing.PrinterSettings.InstalledPrinters`（**Windows 専用**）。既定プリンタは `new PrinterSettings().PrinterName` で判定し `is_default=1` を記録する（R14.4）。
+- upsert 規則: (`machine_name`, `printer_name`) をキーに、存在すれば `last_seen_at`（UTC）・`is_active`・`is_default`・`updated_at` を更新、無ければ追加する（R14.3）。
+- 用途: 記録された稼働機分の `m_printer` が、Worker の printer_name 存在チェック（R5.9）の基礎となる（R14.5）。
+- 実装形態: 起動時サービス（`IHostedService`／Worker 起動処理内の初期化）として `CommonDbContext` 相当（db_common_dev 接続）で upsert する。マスタ upsert 自体は副作用を伴う統合対象（「Testing Strategy」参照）。
 
 #### 5. `row_version` 追加による楽観ロックの実効化
 
@@ -243,8 +264,7 @@ DDL の実適用はユーザーが db_common_dev に対して実施する（R3.1
 | 投入元モジュール | `module` | nvarchar(40) | NOT NULL | — | 投入元アプリ名（例: material）。`t_smtp_queue.module` と対 |
 | 帳票種別 | `report_type` | nvarchar(20) | NOT NULL | — | 帳票種別コード |
 | 参照コード | `reference_code` | nvarchar(50) | NOT NULL | — | 発注番号等の参照キー |
-| 出力区分 | `output_type` | int | NOT NULL | — | 印刷対象判定（Worker: 1 or 3 で印刷） |
-| 印刷ステータス | `print_status` | int | NOT NULL | 1 | 0=対象外 / 1=待機 / 2=処理中 / 3=完了 / 9=エラー（R1.4） |
+| 印刷ステータス | `print_status` | int | NOT NULL | 1 | 1=待機 / 2=処理中 / 3=完了 / 9=エラー（R1.4） |
 | PDFパス | `pdf_path` | nvarchar(500) | NOT NULL | — | 印刷対象 PDF フルパス（投入側が生成・保存）。PrintAgent の唯一の印刷ソース（D6） |
 | プリンタ名 | `printer_name` | nvarchar(200) | NULL | — | NULL=既定プリンタ |
 | 部数 | `copies` | int | NOT NULL | 1 | 1 未満は 1 に正規化 |
@@ -258,7 +278,7 @@ DDL の実適用はユーザーが db_common_dev に対して実施する（R3.1
 **制約・インデックス**:
 
 - PK: `id`。
-- `print_status` は上記 5 値のいずれか（アプリ層で保証。必要なら CHECK 制約可）。
+- `print_status` は上記 4 値（1/2/3/9）のいずれか（アプリ層で保証。必要なら CHECK 制約可）。
 - インデックス（承認済み決定）:
   - `IX_t_print_queue_status_created`（`print_status`, `created_at`）— Worker の「待機ジョブを作成順に取得」（`WHERE print_status=1 ... ORDER BY created_at`）およびサマリ集計を支援。
   - `IX_t_print_queue_reference_code`（`reference_code`）— Common_PrintMonitor のキーワード検索／参照コード照会を支援。
@@ -281,12 +301,35 @@ PrintAgent(Worker) の死活監視（1 行運用）。`m_smtp_agent_control` と
 
 > `m_print_agent_control` は 1 行運用・単一 Writer（PrintAgent のみ更新）であり、既存の対テーブル `m_smtp_agent_control`／`MSmtpAgentControl` も `row_version` を持たない。**パリティ維持のため本テーブルは `row_version` を付与しない**（プロジェクトルールの「新規エンティティは row_version 必須」に対する明示的例外）。監視画面は本テーブルを更新しない（読み取りのみ）ため競合検出は不要。
 
+### `m_printer`（db_common_dev・新設）
+
+プリンタマスタ。PrintAgent が **起動時**に稼働機のインストール済みプリンタを列挙して upsert する（R14）。プリンタ名は機ごとに異なりうるため `machine_name` で稼働機を区別する。printer_name 存在チェック（R5.9）の基礎。
+
+| 論理名 | 列名 | 型 | NULL | 既定 | 備考 |
+|---|---|---|---|---|---|
+| ID | `id` | int IDENTITY(1,1) | NOT NULL | — | 主キー（PK） |
+| 稼働マシン名 | `machine_name` | nvarchar(100) | NOT NULL | — | 稼働機識別。プリンタは機ごとに異なる（R14.6） |
+| プリンタ名 | `printer_name` | nvarchar(200) | NOT NULL | — | インストール済みプリンタ名 |
+| 既定プリンタ | `is_default` | bit | NOT NULL | 0 | 稼働機の既定プリンタなら 1（R14.4） |
+| 有効フラグ | `is_active` | bit | NOT NULL | 1 | 現在も列挙されるか（退役検知に利用可） |
+| 最終確認日時 | `last_seen_at` | datetime2 | NULL | — | 起動時列挙で最後に確認した日時(UTC)（R14.3） |
+| 作成日時 | `created_at` | datetime2 | NOT NULL | — | 追加日時(UTC) |
+| 更新日時 | `updated_at` | datetime2 | NOT NULL | — | 更新日時(UTC) |
+| 行バージョン | `row_version` | rowversion | NOT NULL | — | 楽観ロック（`[Timestamp]`、自動採番） |
+
+**制約・インデックス**:
+
+- PK: `id`。
+- 一意キー: `UQ_m_printer_machine_printer`（`machine_name`, `printer_name`）— 同一機・同一プリンタの重複を防ぎ upsert のキーとする（R14.2）。
+- インデックス: `IX_m_printer_machine_name`（`machine_name`）— 稼働機単位でのプリンタ照会（存在チェック・将来のプリンタ選択）を支援。
+
 ### エンティティ ↔ 物理列 対応
 
 | 用途 | CommonModule エンティティ | PrintAgent エンティティ | 物理テーブル |
 |---|---|---|---|
 | 印刷キュー | `TPrintQueue` | `TPrintQueue`（PrintAgent 名前空間・別定義） | `t_print_queue` |
 | 死活監視 | `MPrintAgentControl` | `MPrintAgentControl`（既存・接続先のみ変更） | `m_print_agent_control` |
+| プリンタマスタ | `MPrinter` | `MPrinter`（PrintAgent 名前空間・起動時 upsert 用にマッピング） | `m_printer` |
 
 > DB スキーマ変更のためプロジェクトルールに従い、`.kiro/docs/db/テーブル定義書.md` と `.kiro/docs/db/ER図.md` の更新をタスクに含める。
 
@@ -300,7 +343,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 
 ### Property 1: 投入は t_print_queue に待機ジョブを1件追加し入力を保持する
 
-*任意の* 有効な投入入力（空白でない module / reportType / referenceCode / pdfPath、任意の outputType・printerName・copies）に対して、`EnqueueAsync` は `t_print_queue` に **ちょうど 1 件** を追加し、その行は `print_status == 1`、`module`/`report_type`/`reference_code`/`output_type`/`pdf_path`/`printer_name` が入力に一致（`copies` は 1 未満なら 1）、かつ `created_at == updated_at` を満たし、**他テーブルを操作しない**。
+*任意の* 有効な投入入力（空白でない module / reportType / referenceCode / pdfPath、任意の printerName・copies）に対して、`EnqueueAsync` は `t_print_queue` に **ちょうど 1 件** を追加し、その行は `print_status == 1`、`module`/`report_type`/`reference_code`/`pdf_path`/`printer_name` が入力に一致（`copies` は 1 未満なら 1）、かつ `created_at == updated_at` を満たし、**他テーブルを操作しない**。
 
 **Validates: Requirements 1.5, 4.1, 4.2, 4.3**
 
@@ -312,7 +355,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 
 ### Property 3: 再出力は完了・エラーかつ pdf_path 有りのみを待機へ戻し、それ以外は不変
 
-*任意の* 印刷ジョブ（`print_status ∈ {0,1,2,3,9}`、pdf_path の有無を含む）に対して再出力を適用したとき、`print_status ∈ {3,9}` **かつ** `pdf_path` が非空である場合に限り `print_status` を `1` にし `picked_at`・`printed_at`・`error_message` をクリアする。それ以外（status が 3・9 以外、または pdf_path が空）の場合はレコードを変更せず、再出力できない旨を通知する。
+*任意の* 印刷ジョブ（`print_status ∈ {1,2,3,9}`、pdf_path の有無を含む）に対して再出力を適用したとき、`print_status ∈ {3,9}` **かつ** `pdf_path` が非空である場合に限り `print_status` を `1` にし `picked_at`・`printed_at`・`error_message` をクリアする。それ以外（status が 3・9 以外、または pdf_path が空）の場合はレコードを変更せず、再出力できない旨を通知する。
 
 **Validates: Requirements 9.4, 9.5**
 
@@ -336,9 +379,15 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 
 ### Property 7: 印刷ステータス遷移の単調性
 
-*任意の* 印刷ジョブと *任意の* 操作列に対して、許容される print_status 遷移は Worker 処理では `1→2`（取得）・`2→3`（正常完了）・`2→9`（失敗）のみ、監視画面の再出力では `3→1`・`9→1` のみである。完了(3)・エラー(9) から処理系が `2` へ戻ることはなく、完了(3)・エラー(9)・処理中(2) から `1` へ戻せるのは再出力（3/9 のみ、Property 3）に限る。すなわち処理の進行は後退せず（3/9 は Worker により再取得されない）、`0`（対象外）は処理対象にならない。
+*任意の* 印刷ジョブと *任意の* 操作列に対して、許容される print_status 遷移は Worker 処理では `1→2`（取得）・`2→3`（正常完了）・`2→9`（失敗）のみ、監視画面の再出力では `3→1`・`9→1` のみである。完了(3)・エラー(9) から処理系が `2` へ戻ることはなく、完了(3)・エラー(9)・処理中(2) から `1` へ戻せるのは再出力（3/9 のみ、Property 3）に限る。すなわち処理の進行は後退しない（3/9 は Worker により再取得されない）。
 
 **Validates: Requirements 1.4, 5.3, 5.4, 5.5**
+
+### Property 8: プリンタ解決の決定性
+
+*任意の* `printer_name`（NULL または指定）と稼働機のインストール済みプリンタ集合に対して、プリンタ解決は決定的に次のいずれかを返す: `printer_name` が NULL なら **既定プリンタ** が選択され、非 NULL かつ集合に含まれれば **当該プリンタ**、非 NULL かつ集合に含まれなければ **「印刷不可（status 9 エラー）」** と判定される。この解決は純粋関数として PBT 可能である（プリンタマスタ `m_printer` への upsert 自体は副作用のため統合テストで検証する）。
+
+**Validates: Requirements 5.8, 5.9, 14.5**
 
 ### Property 9: row_version による二重取得防止
 
@@ -346,7 +395,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 
 **Validates: Requirements 2.1, 2.2**
 
-> 検証方針の注記: Property 1〜7 は純粋ロジックとして PBT（100 回以上反復）で検証する。Property 9 は EF Core／DB の実挙動に依存するため、並行統合テスト（同一行を 2 コンテキストで更新し一方のみ成功・他方例外）で検証する（PBT ではなく INTEGRATION）。旧 Property 8（出力ソース選択・pdf_path 優先／デュアルモード）は、印刷パスが単一化（印刷専用）されたため廃止した。
+> 検証方針の注記: Property 1〜8 は純粋ロジックとして PBT（100 回以上反復）で検証する（Property 8 のプリンタマスタ upsert 自体は統合テスト）。Property 9 は EF Core／DB の実挙動に依存するため、並行統合テスト（同一行を 2 コンテキストで更新し一方のみ成功・他方例外）で検証する（PBT ではなく INTEGRATION）。なお番号 8 は、かつて「出力ソース選択・pdf_path 優先／デュアルモード」を表していたが、印刷パスの単一化（印刷専用）により当該プロパティは廃止済みであり、本改訂で「プリンタ解決の決定性」として番号を再利用している。
 
 ## Error Handling
 
@@ -357,6 +406,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 | 楽観ロック競合（Worker のジョブ取得時） | `PrintJobWorker` | 既存の `catch (DbUpdateConcurrencyException)` で当該ジョブをスキップ（他インスタンス取得済み）。`row_version` 追加により実効化。（R2.2 / D4 / Property 9） |
 | 再出力対象が不正状態（0/1/2） | Common_PrintMonitor `OnPostReprintAsync` | 遷移せず「再出力できる状態ではありません（現在: 〜）」を通知。（Property 3 / R9.4） |
 | 再出力対象が pdf_path 無し | Common_PrintMonitor `OnPostReprintAsync` | 遷移せず「印刷ソース（PDF）が無いため再出力できません」を通知。（Property 3 / R9.5・D6） |
+| printer_name 指定だが稼働機に未インストール | `PrintJobWorker`（プリンタ解決） | `print_status=9`、`error_message`「指定プリンタが存在しません」を設定。**印刷を試行しない**。（R5.9 / D8 / Property 8） |
 | 印刷失敗（Worker） | `PrintJobWorker` | `print_status=9`、`error_message` に内容（500 文字で切詰）を設定。印刷ロジック不変。（R5.5 / D4） |
 | pdf_path 指定ファイルが不存在（Worker） | `PrintJobWorker`（サイレント印刷） | 印刷失敗として `print_status=9`、`error_message` にパス不存在を設定。（D6 / R5.5） |
 | heartbeat 更新失敗（Worker） | `PrintJobWorker.UpdateHeartbeatAsync` | ログのみ。ジョブ処理は継続（不変）。（D4） |
@@ -367,7 +417,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 
 ### 方針（二層テスト）
 
-- **プロパティテスト**: 上記 Correctness Properties（Property 1〜7）を、CommonModule の純粋ロジック（投入サービス・監視画面の非UIロジック・状態遷移規則）に対し実施。
+- **プロパティテスト**: 上記 Correctness Properties（Property 1〜8）を、CommonModule の純粋ロジック（投入サービス・監視画面の非UIロジック・状態遷移規則・プリンタ解決）に対し実施。
 - **ユニット／例示テスト**: 特定シナリオ・境界・エラー条件（値域定義 R1.4、認可拒否 R8.4、競合メッセージ R2.3、一覧列表示 R9.1 等）。
 - **統合テスト**: Worker の実挙動・EF Core 楽観ロック競合（R2.2・R5.4〜5.6・R6.3・Property 9）を 1〜3 例で確認。
 - **スモークテスト**: スキーマ／構成／ルーティング（R1.1〜1.3・R6.1・R8.1〜8.3 等）。
@@ -379,8 +429,8 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 - **各プロパティテストは最低 100 回反復**。
 - 各テストに設計プロパティ参照コメントを付す。
   - タグ形式: `Feature: print-platform, Property {番号}: {プロパティ本文}`
-- 対応: Property 1〜7 をそれぞれ **単一のプロパティテスト**で実装する（Property 9 は統合テストで実装）。
-  - ジェネレータ: 有効投入入力（空白でない module/reportType/referenceCode/pdfPath・任意 int）、必須欠落（pdf_path 含む）の不正入力、print_status ∈ {0,1,2,3,9}・pdf_path 有無、ジョブ集合＋フィルタ条件、時刻差（負・0〜数分・境界 30 秒ちょうど）。
+- 対応: Property 1〜8 をそれぞれ **単一のプロパティテスト**で実装する（Property 8 のマスタ upsert 副作用と Property 9 は統合テストで実装）。
+  - ジェネレータ: 有効投入入力（空白でない module/reportType/referenceCode/pdfPath・任意 int）、必須欠落（pdf_path 含む）の不正入力、print_status ∈ {1,2,3,9}・pdf_path 有無、ジョブ集合＋フィルタ条件、時刻差（負・0〜数分・境界 30 秒ちょうど）、printer_name（NULL/指定）＋インストール済みプリンタ集合。
 
 ### 統合・スモークテスト（PBT 非対象）
 
@@ -472,19 +522,23 @@ flowchart TD
 
 プロジェクトルール「作業は最小単位で進める」に従い、実装は次の独立した最小単位に分割する（各単位＝1 つの検証可能な成果物）。tasks フェーズで細分化する際の指針。
 
-1. CommonModule: `TPrintQueue` エンティティ追加（1 ファイル）。
+1. CommonModule: `TPrintQueue` エンティティ追加（1 ファイル）。※本改訂で `output_type` プロパティを持たせない（既実装があれば削除）。
 2. CommonModule: `MPrintAgentControl` エンティティ追加（1 ファイル）。
-3. CommonModule: `CommonDbContext` に DbSet 2 件追加（1 ファイル・小改修）。
+3. CommonModule: `CommonDbContext` に DbSet 追加（`PrintQueue`／`PrintAgentControls`／`Printers`）（1 ファイル・小改修）。
 4. CommonModule: `IPrintQueueService` 定義（1 ファイル）。
-5. CommonModule: `PrintQueueService` 実装＋DI 登録（実装 1 ファイル＋`AddCommonModule` 小改修）。
+5. CommonModule: `PrintQueueService` 実装＋DI 登録（実装 1 ファイル＋`AddCommonModule` 小改修）。※`EnqueueAsync` の `outputType` 引数を削除（シグネチャ変更, D7）。
+5a. CommonModule: `MPrinter` エンティティ追加（1 ファイル・`m_printer` マッピング, R14）。
 6. CommonModule: Common_PrintMonitor PageModel（一覧・フィルタ・サマリ・死活・再出力）（1 ファイル）。
 7. CommonModule: Common_PrintMonitor ビュー（`Common_SmtpMonitor` スタイル準拠）（1 ファイル）。
-8. Doc: `t_print_queue`・`m_print_agent_control` の DDL（別 SQL ファイル）＋`テーブル定義書.md`／`ER図.md` 更新。
-9. PrintAgent（別ソリューション）: エンティティ差替え（`TPrintQueue`）。
-10. PrintAgent: `PrintAgentDbContext` マッピング更新。
+8. Doc: `t_print_queue`（`output_type` 列なし）・`m_print_agent_control`・`m_printer` の DDL（別 SQL ファイル）＋`テーブル定義書.md`／`ER図.md` 更新。
+8b. CommonModule/DDL: `t_print_queue` の `output_type` 列撤去（既存 DDL `create_t_print_queue.sql` の修正）と、参照箇所（`TPrintQueue`／`PrintQueueService`／`Common_PrintMonitor`）からの `output_type` 撤去（D7・実装同期）。
+9. PrintAgent（別ソリューション）: エンティティ差替え（`TPrintQueue`。`output_type` を持たせない）。
+9b. PrintAgent: `MPrinter` エンティティ（`m_printer` upsert 用マッピング）追加。
+10. PrintAgent: `PrintAgentDbContext` マッピング更新（`TPrintQueue`／`MPrinter` を含む）。
 11. PrintAgent: `appsettings.json` 接続先変更（db_common_dev）。
-12. PrintAgent: `PrintJobWorker` 印刷専用化（`pdf_path` サイレント印刷・payload 生成分岐と `PdfGeneratorService`/`Documents/` の退役）＋`printed_at` 一本化（最小改修）。
-13. テスト: Property 1〜7（`CommonModule.Tests`）＋統合（Property 9・Worker）。
+12. PrintAgent: `PrintJobWorker` 印刷専用化（`pdf_path` サイレント印刷・payload 生成分岐と `PdfGeneratorService`/`Documents/` の退役）＋`printed_at` 一本化＋**`output_type` 印刷可否ゲート撤去（全ジョブ印刷, D7）**＋**プリンタ解決（`printer_name ?? 既定`）と存在チェック（未インストールは status 9, D8）**（最小改修）。
+12b. PrintAgent: 起動時プリンタ列挙 → `m_printer` upsert サービス（`IHostedService` 等・`InstalledPrinters` 列挙, R14）。
+13. テスト: Property 1〜8（`CommonModule.Tests`）＋統合（Property 8 マスタ upsert・Property 9・Worker）。
 14. カットオーバー: 残 JOB 移行 SQL 方針＋切替 Runbook（Doc）。
 
 > 各単位は完了ごとに提示し、ユーザーのビルド／テスト確認を挟んでから次へ進む。DB 移行・切替は特に小刻みに、各ステップで停止確認する。

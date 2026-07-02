@@ -38,8 +38,10 @@
 - **Common_SmtpMonitor**: `CommonModule/Areas/Common/Pages/SmtpMonitor`（`/Common/SmtpMonitor`）。`t_smtp_queue` ベースのSMTP監視画面。Common_PrintMonitor の機能・スタイルの参照基準。
 - **m_print_agent_control**: db_common_dev に新設する PrintAgent 死活監視テーブル（1行運用）。PrintAgent がポーリング毎に `last_heartbeat_at`（UTC）・`machine_name` を更新する。`m_smtp_agent_control` と対の命名・思想。
 - **CommonDbContext**: db_common_dev に接続する CommonModule の DbContext。
-- **PrintStatus**: 印刷状態。0=対象外, 1=待機, 2=処理中, 3=完了, 9=エラー。
+- **PrintStatus**: 印刷状態。1=待機, 2=処理中, 3=完了, 9=エラー。（印刷対象か否かの判定は投入側＝dispatch-monitoring-consolidation が所有し、`t_print_queue` には印刷対象ジョブのみが投入されるため、旧 0=対象外 は保持しない）
+- **m_printer**: db_common_dev に新設するプリンタマスタ。PrintAgent が起動時にインストール済みプリンタ名を自動登録（upsert）する。(machine_name, printer_name) をキーに is_default/is_active/last_seen_at 等を保持し、プリンタ存在チェック・将来のプリンタ選択の基礎とする。
 - **pdf_path**: `t_print_queue` の列。投入側（MaterialModule）が生成・保存した印刷対象 PDF のフルパス。必須（NOT NULL）であり、PrintAgent の唯一の印刷ソースである。（旧 PrintPayload（印刷用 JSON からの PDF 再生成）は本改訂で廃止）
+- **printer_name**: `t_print_queue` の列。出力先プリンタ名。未指定（NULL）の場合は PrintAgent の既定プリンタへ出力する。
 - **DbPermissionCheck**: DB権限ベースの認可ポリシー（`[Authorize(Policy = "DbPermissionCheck")]`）。
 - **RowVersion**: 楽観的ロック用の行バージョン列（`[Timestamp]` 属性に対応する `row_version` カラム）。
 - **カットオーバー**: 印刷ジョブの正本キューを `t_order_reports`（db_material_dev）から `t_print_queue`（db_common_dev）へ切り替える移行作業。投入先（PrintJobService）と読取先（PrintAgent）の切替を含む。
@@ -62,13 +64,14 @@
 #### Acceptance Criteria
 
 1. THE Common_Print_Platform SHALL 印刷ジョブを db_common_dev の `t_print_queue` テーブルに保持する。
-2. THE t_print_queue SHALL 印刷関連列（module, report_type, reference_code, output_type, print_status, pdf_path, printer_name, copies, picked_at, printed_at, error_message, created_at, updated_at, row_version）を保持する。
+2. THE t_print_queue SHALL 印刷関連列（module, report_type, reference_code, print_status, pdf_path, printer_name, copies, picked_at, printed_at, error_message, created_at, updated_at, row_version）を保持する。
 3. THE t_print_queue SHALL FAX関連列（fax_status 等）を保持しない。
-4. THE t_print_queue SHALL print_status 列を保持し、当該列の値を 0（対象外）, 1（待機）, 2（処理中）, 3（完了）, 9（エラー）のいずれかとして定義する。
+4. THE t_print_queue SHALL print_status 列を保持し、当該列の値を 1（待機）, 2（処理中）, 3（完了）, 9（エラー）のいずれかとして定義する。
 5. THE t_print_queue SHALL pdf_path 列を必須（NOT NULL）として保持し、当該列を投入側（MaterialModule）が生成・保存した印刷対象 PDF のフルパス（PrintAgent の唯一の印刷ソース）とする。
 6. THE t_print_queue SHALL print_payload 列を保持しない。
 7. THE t_print_queue SHALL printed_at 列を印刷完了日時として保持する。
 8. THE t_print_queue SHALL 命名および設計思想を `t_smtp_queue` と対になる形で定義する。
+9. THE t_print_queue SHALL output_type 列を保持しない（印刷対象判定は投入側が行い、キューには印刷対象ジョブのみが投入される）。
 
 ### Requirement 2: `t_print_queue` の楽観的ロック
 
@@ -102,6 +105,7 @@
 4. THE 本 spec SHALL 印刷イメージ（PDF）の生成・保存を投入側（MaterialModule）の前提責務とし、`t_print_queue` は生成済み PDF のパス（pdf_path）を受け取ることを契約として定義する。
 5. THE 本 spec SHALL PrintJobService の投入側実装の所有を別 spec `dispatch-monitoring-consolidation` に帰属させ、本 spec は投入契約のみを定義する。
 6. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス経由か直接アクセスか）SHALL `dispatch-monitoring-consolidation` の設計フェーズで決定される。
+7. THE 本 spec SHALL 投入契約に output_type を含めず、`t_print_queue` には印刷対象ジョブのみが投入されることを契約として定義する（印刷対象か否かの判定は投入側＝dispatch-monitoring-consolidation が所有する）。
 
 ### Requirement 5: PrintAgent の読取先変更
 
@@ -114,8 +118,10 @@
 3. WHEN PrintAgent が `t_print_queue` の待機ジョブ（print_status=1 かつ pdf_path が非空）を取得する、THE PrintAgent SHALL 当該ジョブの print_status を 2（処理中）へ更新する。
 4. WHEN PrintAgent が印刷を正常に完了する、THE PrintAgent SHALL 当該ジョブの print_status を 3（完了）へ更新し、printed_at に完了日時を設定する。
 5. IF PrintAgent が印刷処理に失敗する（pdf_path が指すファイルが存在しない場合を含む）、THEN THE PrintAgent SHALL 当該ジョブの print_status を 9（エラー）へ更新し、error_message にエラー内容を設定する。
-6. WHEN PrintAgent が処理中（print_status=2）のジョブを処理する、THE PrintAgent SHALL 当該ジョブの pdf_path が指す生成済み PDF をサイレント印刷する（PDF 生成は行わず、pdf_path を唯一の印刷ソースとする単一パス）。
+6. WHEN PrintAgent が処理中（print_status=2）のジョブを処理する、THE PrintAgent SHALL 当該ジョブの pdf_path が指す生成済み PDF をサイレント印刷する（output_type による印刷可否判定は行わず、キュー上のジョブは全て印刷対象とする）。
 7. THE PrintAgent SHALL 資材固有テーブル `t_order_reports` に依存しない。
+8. WHERE ジョブの printer_name が未指定（NULL）である、THE PrintAgent SHALL 既定プリンタへ出力する。
+9. IF ジョブの printer_name が指定されているが当該プリンタが PrintAgent 稼働機にインストールされていない、THEN THE PrintAgent SHALL 当該ジョブの print_status を 9（エラー）へ更新し、error_message に「指定プリンタが存在しません」旨を設定する（印刷を試行しない）。
 
 ### Requirement 6: PrintAgent 死活監視
 
@@ -208,3 +214,18 @@
 4. THE 本 spec SHALL PrintJobService の投入側実装を所有せず、`dispatch-monitoring-consolidation` に帰属させる。
 5. THE 本 spec SHALL FAX一本化・Material_SmtpMonitor 廃止・Common_SmtpMonitor 集約を所有せず、`dispatch-monitoring-consolidation` に帰属させる。
 6. THE 本 spec SHALL 印刷イメージ（PDF）生成の実装を所有せず、投入側（MaterialModule／`dispatch-monitoring-consolidation`）に帰属させ、本 spec は `t_print_queue` の契約（pdf_path が印刷対象 PDF を保持）と PrintAgent の印刷専用化のみを所有する。
+
+### Requirement 14: プリンタマスタと起動時自動登録
+
+**User Story:** 運用管理者として、印刷先プリンタの一覧を基盤側で把握したい。そうすればプリンタ指定の妥当性検証や選択が可能になる。
+
+（本 Requirement は Requirement 5 の printer_name 検証（AC9）の基礎となるプリンタマスタを定義する。番号衝突・既存クロスリファレンス保全のため、末尾に新規番号として追加する。）
+
+#### Acceptance Criteria
+
+1. THE Common_Print_Platform SHALL db_common_dev にプリンタマスタ `m_printer` を定義する。
+2. THE m_printer SHALL (machine_name, printer_name) を一意キーとして保持し、is_default（既定プリンタか）, is_active, last_seen_at, created_at, updated_at を保持する。
+3. WHEN PrintAgent が起動する、THE PrintAgent SHALL 稼働機にインストール済みのプリンタ名を列挙し `m_printer` へ upsert（存在すれば last_seen_at 更新、無ければ追加）する。
+4. THE PrintAgent SHALL 既定プリンタを is_default=1 として記録する。
+5. THE プリンタ存在チェック（Requirement 5 の printer_name 検証）SHALL 稼働機のインストール済みプリンタ（`m_printer` 稼働機分または実列挙）に基づく。
+6. THE m_printer SHALL プリンタ名が機ごとに異なりうるため machine_name で稼働機を区別する。
