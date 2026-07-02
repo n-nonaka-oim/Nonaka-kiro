@@ -111,7 +111,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - Area "Common" 共通スタイル（Bootstrap 5 + vanilla JS、site.css は変更しない）で一覧・フィルタ・サマリ・死活表示・再出力操作・error_message 表示を描画（`Common_SmtpMonitor` と一貫）
     - _Requirements: 9.1, 9.6, 9.7, 10.1_
 
-- [ ] 5. チェックポイント - CommonModule のテストを通す
+- [x] 5. チェックポイント - CommonModule のテストを通す
   - すべてのテスト（Property 1〜6）が通ることを確認し、不明点があればユーザーに確認する。
 
 - [x] 6. PrintAgent（別ソリューション）のエンティティ・DbContext・接続先変更

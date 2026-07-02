@@ -325,3 +325,20 @@
 ### 次
 - 7.5 コミット後、print-platform は**実装・テスト実装・ドキュメント・クリーンアップが完了**。残るはユーザーのテスト実行（CP）・DDL適用・カットオーバー（dispatch-monitoring-consolidation 実装後）。
 - 次の大きな一手は依存spec **dispatch-monitoring-consolidation**（投入側 PrintJobService→IPrintQueueService＋MaterialModule の PDF 生成→pdf_path）。
+
+---
+
+## テスト実行結果（CommonModule.Tests）＝グリーン／CP5 完了
+
+- Kiro が `dotnet test CommonModule.Tests` を実行（ユーザー明示指示）。
+- 初回: 合計17/成功16/スキップ1/失敗0。ただしビルド警告 CS8620（`PrintMonitorReprintPropertyTests.cs` pdfPathGen の `Gen.OneOf` に `Gen<string>` と `Gen<string?>` 混在）。
+- 修正: 先頭 `Gen.Elements` を `Gen.Elements<string?>` に統一。再テスト＝**合計17/成功16/スキップ1/失敗0・警告0**（クリーン）。
+- スキップ1＝Property 9 統合テスト（要 SQL Server db_common_dev・既定スキップ）。InMemory 不要の PBT（Property 1〜7）は全緑。
+- **CP5（CommonModule のテストを通す）＝完了**（tasks 5＝[x]）。コミット clnCoCore `a67582c`。
+- InMemory PBT は t_print_queue 実テーブル不要（モデルからメモリ生成）で実行可能を実証。
+
+### print-platform 残（ユーザー実行系のみ）
+- CP8（Property 7〜9）：7.3 緑・**7.5 は要 SQL Server 実行**（DDL適用後に PRINT_PLATFORM_IT_CONN 設定 or Skip解除）。
+- CP10（全テスト）：7.5 実DB実行を含め最終確認。
+- 実行系: DDL適用（t_print_queue/m_print_agent_control）・実印刷・カットオーバー（dispatch-monitoring-consolidation 前提）。
+- 未コミット: Nonaka/.kiro（tasks CP5・本memo）。
