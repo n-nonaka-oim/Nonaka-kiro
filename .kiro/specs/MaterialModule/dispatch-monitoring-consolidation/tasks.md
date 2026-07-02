@@ -20,7 +20,7 @@
 ## Tasks
 
 - [ ] 1. 印刷出力パスマスタのデータ基盤（エンティティ・DDL・ドキュメント）
-  - [ ] 1.1 `MPrintOutputPath` エンティティ追加 + `MaterialDbContext` に `DbSet` 追加
+  - [x] 1.1 `MPrintOutputPath` エンティティ追加 + `MaterialDbContext` に `DbSet` 追加
     - `MaterialModule/Data/Entities/MPrintOutputPath.cs` を新規作成（`[Table("m_print_output_path")]`、`Id`/`BasePath`/`Description`/`IsActive`/`RowVersion`/`CreatedAt`/`UpdatedAt` を design.md「エンティティ `MPrintOutputPath`」の列対応どおりにマッピング）
     - `[Key]`＋`[DatabaseGenerated(DatabaseGeneratedOption.Identity)]`、`base_path` は `[Required]`＋`[MaxLength(500)]`、`row_version` は `[Timestamp]`（`byte[]`）
     - `MaterialDbContext` に `DbSet<MPrintOutputPath> PrintOutputPaths` を追加（1行の小改修）

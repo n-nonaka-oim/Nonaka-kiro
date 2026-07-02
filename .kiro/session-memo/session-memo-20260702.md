@@ -524,3 +524,20 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260702）。次アクション＝タスク1.1。
+
+---
+
+## dispatch-monitoring-consolidation 実装着手：タスク1.1 完了＋コミット
+
+- **タスク1.1 完了**（wave0）: `MaterialModule/Data/Entities/MPrintOutputPath.cs` 新規＋`MaterialDbContext` に `DbSet<MPrintOutputPath> PrintOutputPaths => Set<...>()` 追加。
+  - 列対応: Id(`id`,Key/Identity)・BasePath(`base_path`,[Required][MaxLength500])・Description(`description`,nullable[MaxLength200])・IsActive(`is_active`,既定true)・RowVersion(`row_version`,[Timestamp])・CreatedAt/UpdatedAt(`created_at`/`updated_at`,[Required])。監査 created_by/updated_by は持たない（MaterialModule規約）。
+  - 既存エンティティは `[Column]` に TypeName 未使用のため踏襲（SQL型は 1.2 DDL で担保）。`[Timestamp]`/row_version はモジュール初採用（新規エンティティ規約どおり）。DbContext は expression-bodied `=> Set<T>()` 形式に合わせた。
+  - 診断クリア・MaterialModule 配下のみ変更。
+- **コミット**: MaterialModule（別git・toplevel=`Nonaka/MaterialModule`）`cb78880`（2ファイル・52行）。※MaterialModule は clnCoCore 外の独立リポジトリと判明。
+- tasks 1.1＝[x]（task_update ツールは full-text ID で機能）。
+
+### 次（wave0 残り・並行可）
+- **1.2** `m_print_output_path` DDL＋シードSQL（`MaterialModule/docs/sql/`・db_material_dev・base_path 既定 `\\ojiadm23120073\app_share\PrintAgent`・is_active=1）。
+- **1.3** `.kiro/docs/db/テーブル定義書.md`・`ER図.md` に `m_print_output_path` 追記（単独マスタ）。
+- その後 wave1: 2.1 IPrintOutputPathService。
+- 未コミット: Nonaka/.kiro（tasks 1.1・本memo）。
