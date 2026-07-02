@@ -91,7 +91,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - `m_print_agent_control` の最終 heartbeat が 30 秒以内なら「ポーリング中」、超過（または null）なら「応答なし」。`HeartbeatAliveSeconds = 30`（SmtpMonitor と同値・同ロジック）。マシン名・最終応答時刻(JST)を表示
     - _Requirements: 9.6_
 
-  - [ ]* 4.5 死活判定のプロパティテスト
+  - [x]* 4.5 死活判定のプロパティテスト
     - **Property 6: 死活判定は heartbeat 閾値と同値**
     - **Validates: Requirements 9.6**
     - 経過時間（負・0〜数分・境界30秒ちょうど・null）を生成し、Alive 判定が `経過<=30秒` と同値・null は「応答なし」を検証。`// Feature: print-platform, Property 6` タグ、100イテレーション以上
@@ -102,7 +102,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - `DbUpdateConcurrencyException` を捕捉し「他のユーザーが先に更新しました。画面を再読み込みしてください。」を通知
     - _Requirements: 2.2, 2.3, 9.4, 9.5_
 
-  - [ ]* 4.7 再出力遷移のプロパティテスト
+  - [x]* 4.7 再出力遷移のプロパティテスト
     - **Property 3: 再出力は完了・エラーかつ pdf_path 有りのみを待機へ戻し、それ以外は不変**
     - **Validates: Requirements 9.4, 9.5**
     - print_status∈{0,1,2,3,9}×pdf_path 有無を生成し、3/9 かつ pdf_path 有りのみ 1 へ遷移＋クリア、他は不変を検証。`// Feature: print-platform, Property 3` タグ、100イテレーション以上
