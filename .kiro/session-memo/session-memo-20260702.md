@@ -233,3 +233,19 @@
 ### 残（関連ドキュメント反映の続き・別小単位）
 - **PrintAgent/docs 一式の更新**（`requirements.md`/`design.md`/`tasks.md`/`spec.md`／`direct-print/`）：旧 payload 生成方式 → 印刷専用（t_print_queue＠db_common_dev 読取・pdf_path サイレント印刷・PdfGenerator/Documents 退役）。やや大きめのため分割して実施予定。
 - 未コミット: CommonModule（9.1 SQL・README）・Nonaka/.kiro（tasks 9.x・design 注記・system-architecture・memo）。
+
+---
+
+## PrintAgent/docs 印刷専用化 反映（改訂ノート方式）
+
+- 方針: 全面書き換えではなく、各 core ドキュメント冒頭に「⚠ 改訂ノート（print-platform 対応・印刷専用化）」を追記し、権威契約は `.kiro/specs/CommonModule/print-platform/` を参照。旧 payload/PDF生成記述は改訂前履歴として残置。
+- 追記済み（`\\ojiadm23120073\Labs\WindowsService\PrintAgent\docs\`）:
+  - `spec.md`: 詳細版改訂ノート（読取先 t_print_queue@db_common_dev／印刷専用・pdf_path 必須／print_payload・PdfGeneratorService・Documents 退役／printed_at 一本化・row_version／slnCoCore 除外）。
+  - `requirements.md`・`design.md`・`tasks.md`: 簡潔版改訂ノート（spec.md 参照）。design は TOrderReport→TPrintQueue・接続 db_common_dev も明記。tasks は「改訂作業は print-platform tasks 6・7 で実施済み」を明記。
+- `direct-print/`（旧設計案4本）・`PrintAgent_Source/`（旧ソーススナップショット）は履歴資料としてそのまま（更新せず）。
+
+### 残（次回候補）
+- PrintAgent クリーンアップ（コード）: `PdfGeneratorService`/`IPdfGeneratorService`/`Documents/*.cs`・旧 `TOrderReport.cs` 削除＋`Program.cs` の IPdfGeneratorService 登録除去。※ビルド確認要（別sln）。
+- 任意PBT（3.2/3.3/4.2/4.3/4.5/4.7/7.3/7.5）・CP 5/8/10。
+- 実行系（ユーザー）: DDL適用・実印刷・カットオーバー（dispatch-monitoring-consolidation 前提）。
+- 未コミット: PrintAgent/docs（spec/requirements/design/tasks 改訂ノート・別git）・Nonaka/.kiro（本memo）。
