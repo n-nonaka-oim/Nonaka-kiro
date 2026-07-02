@@ -77,12 +77,12 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - フィルタ: print_status・report_type・キーワード（reference_code 部分一致）・作成日付範囲（JST入力→UTC境界変換、SmtpMonitor と同方式）。サマリ: print_status 別件数（待機1/処理中2/完了3/エラー9）を全件ベースで集計
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 9.1, 9.2, 9.3_
 
-  - [ ]* 4.2 フィルタのプロパティテスト
+  - [x]* 4.2 フィルタのプロパティテスト
     - **Property 4: フィルタ結果は全条件を満たす**
     - **Validates: Requirements 9.2**
     - ジョブ集合＋任意フィルタ条件を生成し、結果の全行が各指定条件を満たし未指定条件は絞り込まないことを検証。`// Feature: print-platform, Property 4` タグ、100イテレーション以上
 
-  - [ ]* 4.3 サマリのプロパティテスト
+  - [x]* 4.3 サマリのプロパティテスト
     - **Property 5: サマリ件数は母集合と整合する**
     - **Validates: Requirements 9.3**
     - ジョブ集合を生成し、各 status 件数が母集合の該当行数と一致し合計が status∈{1,2,3,9} 行数に一致することを検証。`// Feature: print-platform, Property 5` タグ、100イテレーション以上
@@ -137,7 +137,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - 取得時 `1→2`・`picked_at` 設定、完了時 `print_status=3`・`printed_at=UtcNow`（旧 completed_at/print_at 二重設定を廃止）、失敗時 `print_status=9`・`error_message`（500字切詰。`pdf_path` 指定ファイル不存在を含む）。SumatraPDF によるサイレント印刷ロジック自体は不変
     - _Requirements: 5.3, 5.4, 5.5, 5.6, 1.6_
 
-  - [ ]* 7.3 状態遷移単調性のプロパティテスト
+  - [x]* 7.3 状態遷移単調性のプロパティテスト
     - **Property 7: 印刷ステータス遷移の単調性**
     - **Validates: Requirements 1.4, 5.3, 5.4, 5.5**
     - print_status と操作列を生成し、Worker は `1→2`/`2→3`/`2→9`、再出力は `3→1`/`9→1` のみ許容、3/9→2 が起きず 0 は非対象を純粋規則として検証。`// Feature: print-platform, Property 7` タグ、100イテレーション以上（CommonModule.Tests）

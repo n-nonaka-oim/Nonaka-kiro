@@ -283,3 +283,26 @@
 - 監視画面PBT（SMTP対応あり）: 4.2 フィルタ(P4)／4.3 サマリ(P5)／4.5 死活(P6)／4.7 再出力(P3)。Worker: 7.3 状態遷移(P7)／7.5 二重取得統合(P9)。
 - 検証CP 5/8/10。実行系（DDL適用・実印刷・カットオーバー）。
 - 未コミット: CommonModule.Tests（PrintQueueServicePropertyTests.cs）・Nonaka/.kiro（tasks 3.2/3.3・memo）。
+
+---
+
+## 任意PBT 追加完了（4.2/4.3/7.3）＋7.5 の技術的論点
+
+- コミット済み: clnCoCore `193f50b`（4.5/4.7）/ Nonaka `867e8e8`。以降 4.2/4.3/7.3 は未コミット。
+- **作成（CommonModule.Tests・診断クリア）**:
+  - `Pages/PrintMonitor/PrintMonitorFilterPropertyTests.cs`（4.2 Property4 フィルタ：全条件充足＋一致集合SetEquals＋TotalCount）。
+  - `Pages/PrintMonitor/PrintMonitorSummaryPropertyTests.cs`（4.3 Property5 サマリ：status別件数＝母集合・0除外・フィルタ非依存）。
+  - `Pages/PrintMonitor/PrintStatusTransitionPropertyTests.cs`（7.3 Property7 状態遷移：純粋モデル TryApply。Worker 1→2/2→3/2→9・Reprint 3→1/9→1・3/9→2禁止・0不活性・列単調性。Worker は別sln参照不可のため自己完結モデルで検証）。
+- tasks 4.2/4.3/7.3＝[x]（任意）。
+
+### 🔴 7.5（Property 9 二重取得防止・統合）の論点＝要判断
+- 内容: 同一 t_print_queue 待機行を2コンテキストで取得・print_status=2 更新→一方成功・他方 `DbUpdateConcurrencyException`。
+- **技術的制約**: EF Core **InMemory は rowversion 同時実行を強制せず `DbUpdateConcurrencyException` を発生させない**。SQLite も [Timestamp]/rowversion 自動採番を扱えない。→ **真の検証には SQL Server（db_common_dev）実DBが必要**。design も「INTEGRATION・1〜2例・実行はユーザー側」と規定。
+- 選択肢:
+  - (A) SQL Server 実DB向け統合テストを作成（既定スキップ＝環境変数/接続文字列ガード。ユーザーが db_common_dev に対し手動実行）。
+  - (B) 実装せず「ユーザー手動の統合確認」として据え置き（optional のためスキップ可）。
+- → 次セッションでユーザー判断。他の任意PBT（3.2/3.3/4.2/4.3/4.5/4.7/7.3）は完了。
+
+### print-platform 残
+- 7.5（上記・要判断）。検証CP 5/8/10（テスト実行＝ユーザー）。実行系（DDL適用・実印刷・カットオーバー）。
+- 未コミット: CommonModule.Tests（Filter/Summary/Transition 3ファイル）・Nonaka/.kiro（tasks 4.2/4.3/7.3・memo）。
