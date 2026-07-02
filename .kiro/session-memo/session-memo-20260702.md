@@ -306,3 +306,22 @@
 ### print-platform 残
 - 7.5（上記・要判断）。検証CP 5/8/10（テスト実行＝ユーザー）。実行系（DDL適用・実印刷・カットオーバー）。
 - 未コミット: CommonModule.Tests（Filter/Summary/Transition 3ファイル）・Nonaka/.kiro（tasks 4.2/4.3/7.3・memo）。
+
+---
+
+## 7.5 完了（Property 9 統合テスト・既定スキップ）＝任意PBT 全完了
+
+- 作成: `clnCoCore/CommonModule.Tests/Integration/PrintQueueConcurrencyIntegrationTests.cs`（診断クリア）。
+  - xUnit `[Fact(Skip=...)]` 既定スキップ。環境変数 `PRINT_PLATFORM_IT_CONN`（未設定時 db_common_dev 既定接続）で `.UseSqlServer`。
+  - 待機行1件投入→2コンテキストで同一行取得→双方 print_status=2 更新→ctx#1成功・ctx#2 `DbUpdateConcurrencyException`→最終 status=2 検証→finally で行削除。
+  - InMemory は rowversion 競合を再現しないため実 SQL Server 前提（design の INTEGRATION 方針どおり）。ユーザーが DDL 適用後に手動実行。
+- tasks 7.5＝[x]。
+
+### print-platform タスク到達状況
+- 実装系タスク（1〜4・6・7.1・9・11）＝完了。任意PBT（3.2/3.3/4.2/4.3/4.5/4.7/7.3）＝完了。統合(7.5)＝完了(スキップ)。7.4 heartbeat＝既存維持で実質OK。
+- **未完＝ユーザー実行の検証ゲートのみ**: CP 5（CommonModule.Tests 実行）・CP 8（PrintAgent/統合）・CP 10（全テスト）＝テスト実行はユーザー側。実行系（DDL適用・実印刷・カットオーバー＝dispatch-monitoring-consolidation 前提）。
+- コミット済み: clnCoCore `f22c660`(4.2/4.3/7.3) / Nonaka `48765ee`。未コミット: clnCoCore（7.5 Integration）・Nonaka/.kiro（tasks 7.5・memo）。
+
+### 次
+- 7.5 コミット後、print-platform は**実装・テスト実装・ドキュメント・クリーンアップが完了**。残るはユーザーのテスト実行（CP）・DDL適用・カットオーバー（dispatch-monitoring-consolidation 実装後）。
+- 次の大きな一手は依存spec **dispatch-monitoring-consolidation**（投入側 PrintJobService→IPrintQueueService＋MaterialModule の PDF 生成→pdf_path）。

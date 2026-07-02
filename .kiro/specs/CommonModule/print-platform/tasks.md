@@ -146,7 +146,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - ポーリング毎に `m_print_agent_control.last_heartbeat_at`(UTC)・`machine_name` を更新（db_common_dev）。更新失敗は警告ログのみで処理継続（ロジック不変）
     - _Requirements: 6.2, 6.3_
 
-  - [ ]* 7.5 二重取得防止の並行統合テスト
+  - [x]* 7.5 二重取得防止の並行統合テスト
     - **Property 9: row_version による二重取得防止**
     - **Validates: Requirements 2.1, 2.2**
     - 同一 `t_print_queue` 待機行を 2 コンテキストで取得・`print_status=2` 更新し、一方成功・他方 `DbUpdateConcurrencyException`（スキップ）を確認（INTEGRATION・1〜2例）
