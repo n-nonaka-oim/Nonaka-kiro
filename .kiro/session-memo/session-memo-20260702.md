@@ -589,3 +589,55 @@
 - ⚠ 5.1/5.2 の参照撤去後、旧 t_order_reports 参照が MaterialModule から消えるか要確認（TOrderReport エンティティは保全＝削除しない）。
 - wave5: 7.x テスト（任意 PBT 1〜3＋例示＋統合）。wave6: 9.1 カットオーバー協調ノート。
 - 未コミット: MaterialModule（3.1/3.2 PrintJobService・IPrintJobService doc）・Nonaka/.kiro（tasks 3.x・memo）。
+
+---
+
+## 🔴 本日のクロージング・チェックポイント（dispatch-monitoring-consolidation 実装＋新仕様確認）
+
+### 本日完了（実装・全コミット済み）
+- **dispatch-monitoring-consolidation** タスク **1.1／1.2／1.3（親1）・2.1・3.1／3.2（親3）完了**。すべて MaterialModule 配下のみ・診断クリア・公開シグネチャ不変。
+  - 1.1 `MPrintOutputPath` entity+DbSet（Material `cb78880`）
+  - 1.2 `create_m_print_output_path.sql`（Material `c0c2bc7`）
+  - 1.3 テーブル定義書・ER図（Nonaka `88a87bd`）
+  - 2.1 `IPrintOutputPathService`/実装+DI（Material `c910cde` / Nonaka `c5a1f26`）
+  - 3.1/3.2 `PrintJobService` を t_print_queue 投入へ改修＋純関数切出し＋`IPrintJobService` doc整合（Material `d7137f4` / Nonaka `f88cace`）
+- **実機動作確認 A 成功**: db_material_dev に DDL 適用済み → 発注承認 → /Common/PrintMonitor に投入ジョブ表示（module=material・order_approval・G201-260702-001・待機・PDF アイコンあり・copies1）。承認→PDF生成→マスタ由来パス保存→IPrintQueueService 投入 の一連が実機で通った。
+
+### 🟡 サイレント印刷の現状（PrintAgent 側・print-platform 所有）
+- PrintAgent `appsettings.json`: CloudDb=db_common_dev✅／TempPdfDirectory=`\\OJIADM23120073\app_share\PrintAgent`✅／**`SkipPrint:true`（空打ち）**／**`DefaultPrinterName` プレースホルダ**／SumatraPdfPath=`C:\PrintAgent\Tools\SumatraPDF.exe`。
+- ワーカー実挙動: `shouldPrint = OutputType==1||3`（0/2 は「保管」＝印刷せず完了）。printerName 未指定→DefaultPrinter フォールバック。SkipPrint=true は警告のみで status3 完了。
+- 実印刷するには: SkipPrint=false＋実プリンタ設定＋SumatraPDF 実在＋テスト発注 output_type=1（or 3）。※未実施（ユーザー環境作業）。
+
+### 🔴 新規 Print 出力仕様の確認事項（ユーザー提示・未合意→次回決定）
+2 spec 横断（print-platform＝CommonModule/PrintAgent／dispatch-monitoring-consolidation＝MaterialModule）:
+1. **t_print_queue の output_type 列廃止**（＝印刷対象のみ投入）。
+2. t_print_queue にはプリントする PDF のみ投入。
+3. **MaterialModule 側で output_type∈{1,3} のときのみ投入**（ゲートを投入側へ移す。2=FAXのみ・3=印刷+FAX 両キュー・0=どちらも無し非投入）。
+4. printer-name 未指定→デフォルトプリンタ ＝**実装済み**。
+5. printer-name 指定ありでプリンタ非存在→**t_print_queue でエラー(status9)**（ワーカーで事前存在チェック）。
+6. **PrintAgent が printer マスタ（m_printer @db_common_dev）を持ち、起動時にインストール済みプリンタ名を自動 upsert** → **技術的に可能**（`System.Drawing.Printing.PrinterSettings.InstalledPrinters`・Windows専用・キー(machine_name,printer_name)・is_default/is_active/last_seen_at）。⑤の存在チェックの正・将来Webドロップダウン用。
+7. **共有投入関数** = `CommonModule.Services.IPrintQueueService.EnqueueAsync`（CommonModule参照＋AddCommonModule DI 済みなら注入して呼ぶだけ）。①採用時は `outputType` 引数が消える → 新シグネチャ `EnqueueAsync(module,reportType,referenceCode,pdfPath,printerName,copies,ct)`。CommonModule/docs/README に Producer 向け手順を明文化推奨。
+
+### ⚠ 重要な影響
+- ①②③⑤⑥ は **「完了済み」だった print-platform を再オープン**する変更（DDL の output_type 列 DROP・IPrintQueueService シグネチャ変更・PrintJobWorker ゲート撤廃・Property1/requirements 改訂・新 m_printer マスタ＋起動時登録サービス）。
+- ③ は dispatch-monitoring-consolidation 側（PrintJobService の投入フィルタ・EnqueueAsync 呼び出しから outputType 除去）。
+
+### 次アクション（次回・未決3点を先に確認）
+1. ①②③（output_type 廃止・投入側ゲート）採用可否（print-platform 再オープン＋実DB列DROP 伴う）。
+2. ⑤＋⑥（プリンタ存在チェック＋m_printer 自動登録）を今回スコープに含めるか／後続 spec にするか。
+3. 進め方＝「両 spec の requirements/design 更新から」でよいか（実コードはその後・最小単位）。
+- 合意後: print-platform requirements/design 改訂 → dispatch 側 requirements/design 改訂 → tasks 分解 → 実装。
+- 独立作業として、サイレント印刷疎通のみ現行仕様のまま先行確認も可（SkipPrint=false＋実プリンタ＋output_type=1）。
+
+### 残タスク（dispatch-monitoring-consolidation・現行 tasks.md ベース）
+- wave4: 5.1 Material_SmtpMonitor 削除＋fax_status系撤去／5.2 Material_PrintMonitor 削除＋print_status/PrintPayload/PrintAgentControls 撤去／6.1 dbAuthTest m_content 導線解除SQL。
+- wave5: 7.1〜7.5 テスト（任意 PBT Property1〜3＋例示＋統合）。wave6: 9.1 カットオーバー協調ノート。CP 4/8。
+- ※上記 wave4 以降は「新仕様（output_type 廃止 等）」の合意結果で内容が変わる可能性あり（特に 5.2 の print_status 参照・投入フィルタ）。
+
+### コミット状況
+- MaterialModule（別git・toplevel=`Nonaka/MaterialModule`）: `cb78880`→`c0c2bc7`→`c910cde`→`d7137f4`（1.1〜3.2）。全コミット済み。
+- Nonaka/.kiro: `f2ee6a2`→`88a87bd`→`c5a1f26`→`f88cace`（tasks 進捗・docs/db・memo）。本 memo クローズ分は次コミット対象。
+- ⚠ MaterialModule は clnCoCore 外の独立リポジトリ。DDL適用・ビルド・実印刷はユーザー側。task_update ツールは途中不可→tasks.md チェックボックス直接編集を正とした。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260702）。次回はまず上記「新規 Print 出力仕様」未決3点の確認から。
