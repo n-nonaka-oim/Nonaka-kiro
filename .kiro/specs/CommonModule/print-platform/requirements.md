@@ -121,7 +121,7 @@
 6. WHEN PrintAgent が処理中（print_status=2）のジョブを処理する、THE PrintAgent SHALL 当該ジョブの pdf_path が指す生成済み PDF をサイレント印刷する（output_type による印刷可否判定は行わず、キュー上のジョブは全て印刷対象とする）。
 7. THE PrintAgent SHALL 資材固有テーブル `t_order_reports` に依存しない。
 8. WHERE ジョブの printer_name が未指定（NULL）である、THE PrintAgent SHALL 既定プリンタへ出力する。
-9. IF ジョブの printer_name が指定されているが当該プリンタが PrintAgent 稼働機にインストールされていない、THEN THE PrintAgent SHALL 当該ジョブの print_status を 9（エラー）へ更新し、error_message に「指定プリンタが存在しません」旨を設定する（印刷を試行しない）。
+9. IF ジョブの printer_name が指定されているが当該プリンタが印刷時点における PrintAgent 稼働機の実インストール列挙（リアルタイム列挙）に存在しない、THEN THE PrintAgent SHALL 当該ジョブの print_status を 9（エラー）へ更新し、error_message に「指定プリンタが存在しません」旨を設定する（印刷を試行しない）。（プリンタ存在判定の正は稼働機の実インストール列挙であり、`m_printer` マスタではない）
 
 ### Requirement 6: PrintAgent 死活監視
 
@@ -224,8 +224,10 @@
 #### Acceptance Criteria
 
 1. THE Common_Print_Platform SHALL db_common_dev にプリンタマスタ `m_printer` を定義する。
-2. THE m_printer SHALL (machine_name, printer_name) を一意キーとして保持し、is_default（既定プリンタか）, is_active, last_seen_at, created_at, updated_at を保持する。
+2. THE m_printer SHALL (machine_name, printer_name) を一意キーとして保持し、is_default（既定プリンタか）, is_active（有効か）, last_seen_at, created_at, updated_at を保持する。なお is_default および is_active はいずれも必須（NOT NULL）列とする。
 3. WHEN PrintAgent が起動する、THE PrintAgent SHALL 稼働機にインストール済みのプリンタ名を列挙し `m_printer` へ upsert（存在すれば last_seen_at 更新、無ければ追加）する。
 4. THE PrintAgent SHALL 既定プリンタを is_default=1 として記録する。
-5. THE プリンタ存在チェック（Requirement 5 の printer_name 検証）SHALL 稼働機のインストール済みプリンタ（`m_printer` 稼働機分または実列挙）に基づく。
+5. THE プリンタ存在チェック（Requirement 5 の printer_name 検証）SHALL 稼働機の実列挙（稼働機の実インストール一覧）を正（source of truth）とする。`m_printer` は記録・表示・将来のプリンタ選択のための台帳（source of record）であって、存在判定の唯一の正ではない。
 6. THE m_printer SHALL プリンタ名が機ごとに異なりうるため machine_name で稼働機を区別する。
+7. WHEN PrintAgent が起動時にプリンタ列挙を行う、THE PrintAgent SHALL 当該稼働機（machine_name）の `m_printer` 行のうち今回の列挙に存在しないプリンタを is_active=0（無効）に更新する（他の稼働機の行は変更しない）。
+8. THE m_printer SHALL 楽観的ロック用の `row_version`（`[Timestamp]` 属性に対応する rowversion 型）列を保持する（将来の管理画面編集での楽観ロックに備える）。

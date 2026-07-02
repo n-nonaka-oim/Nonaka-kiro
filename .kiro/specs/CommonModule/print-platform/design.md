@@ -21,7 +21,7 @@
 - **D5（カットオーバー）**: DDL → 未処理印刷（print_status 1/2）移行 → 投入先切替（PrintJobService）→ 読取先切替（PrintAgent）。無停止・取り残しなし・可逆。
 - **D6（印刷専用・単一パス）**: 印刷イメージ（PDF）は **投入側（MaterialModule）が生成・保存**し、`pdf_path` で受け渡す。PrintAgent は `pdf_path` の PDF を直接サイレント印刷する（**単一パス**。payload からの生成分岐は持たない）。`print_payload` 列は廃止し、`pdf_path` を必須とする。PDF 生成の実装責務は投入側（MaterialModule／`dispatch-monitoring-consolidation`）が所有し、本 spec は「`t_print_queue` の契約（`pdf_path` が印刷対象 PDF を保持）」と「PrintAgent が印刷専用であること」のみを所有する。
 - **D7（output_type 廃止・投入側ゲート）**: `t_print_queue` から `output_type` 列を廃止する。印刷対象か否かの判定は **投入側（MaterialModule／`dispatch-monitoring-consolidation`）が行い**、キューには印刷対象ジョブのみが投入される。PrintAgent は `output_type` による印刷可否判定を行わず、取得したジョブを **全て印刷する**。（R1.9・R4.7・R5.6 / D6 と整合）
-- **D8（プリンタ解決・存在チェック・プリンタマスタ）**: `printer_name` 未指定（NULL）→ 既定プリンタへ出力する。`printer_name` 指定で稼働機に未インストール → `print_status=9` エラー（`error_message`「指定プリンタが存在しません」、**印刷を試行しない**）。PrintAgent は起動時にインストール済みプリンタを列挙し、`m_printer`（db_common_dev）へ upsert（存在すれば `last_seen_at` 更新、無ければ追加。既定プリンタは `is_default=1`）する。この `m_printer`（稼働機分）が printer_name 存在チェックの基礎となる。（R5.8・R5.9・R14）
+- **D8（プリンタ解決・存在チェック・プリンタマスタ）**: `printer_name` 未指定（NULL）→ 既定プリンタへ出力する。`printer_name` 指定で稼働機に未インストール → `print_status=9` エラー（`error_message`「指定プリンタが存在しません」、**印刷を試行しない**）。**プリンタ存在チェックの正（source of truth）は、印刷時点における稼働機のリアルタイムなインストール済みプリンタ実列挙**であり、`m_printer` マスタではない。PrintAgent は起動時にインストール済みプリンタを列挙し、`m_printer`（db_common_dev）へ upsert（存在すれば `last_seen_at`・`is_active=1`・`is_default` 更新、無ければ追加。既定プリンタは `is_default=1`）し、当該稼働機（machine_name）の既存行のうち今回列挙に無いものは `is_active=0` に自動無効化する。`m_printer` は **台帳（source of record：記録・表示・将来のプリンタ選択用）**であって、存在判定の唯一の正ではない。（R5.8・R5.9・R14）
 
 ### スコープ外（Non-Goals）
 
@@ -232,7 +232,7 @@ services.AddScoped<IPrintQueueService, PrintQueueService>();
 
 - 待機取得: 未処理条件を「`print_status=1` かつ `pdf_path IS NOT NULL`」とする。
 - 取得時: `print_status=2`、`picked_at` 設定。
-- **プリンタ解決（D8 / R5.8・R5.9）**: 出力先プリンタを `printer_name ?? 既定プリンタ` で解決する。`printer_name` が指定されており、かつ稼働機に当該プリンタが **未インストール**の場合は、印刷を **試行せず** `print_status=9`、`error_message`「指定プリンタが存在しません」を設定する（存在チェックは後述「起動時プリンタ列挙とマスタ登録」で得た稼働機分の `m_printer`／実列挙に基づく）。
+- **プリンタ解決（D8 / R5.8・R5.9）**: 出力先プリンタを `printer_name ?? 既定プリンタ` で解決する。`printer_name` が指定されており、かつ稼働機に当該プリンタが **未インストール**の場合は、印刷を **試行せず** `print_status=9`、`error_message`「指定プリンタが存在しません」を設定する。**存在チェックの正（source of truth）は、印刷時点における稼働機のリアルタイムなインストール済みプリンタ実列挙**（`PrinterSettings.InstalledPrinters` の実列挙）である。`m_printer` マスタは記録・表示・将来のプリンタ選択のための台帳であって、存在判定の唯一の正としては用いない（R14.5）。
 - 完了時: `print_status=3`、`printed_at=UtcNow`。
 - 失敗時（印刷失敗・`pdf_path` 不存在等）: `print_status=9`、`error_message` 設定（不変・500 文字切詰）。
 - サイレント印刷（`ISilentPrintService`・SumatraPDF）自体は不変（D4）。PDF 生成（`PdfGeneratorService`/`IPdfGeneratorService`・`Documents/`）は PrintAgent から退役し、投入側（MaterialModule）が所有する。
@@ -242,8 +242,9 @@ services.AddScoped<IPrintQueueService, PrintQueueService>();
 PrintAgent は **起動時**に稼働機のインストール済みプリンタを列挙し、`m_printer`（db_common_dev）へ upsert する。プリンタ名は機ごとに異なりうるため `machine_name` で稼働機を区別する（R14.6）。
 
 - 列挙元: `System.Drawing.Printing.PrinterSettings.InstalledPrinters`（**Windows 専用**）。既定プリンタは `new PrinterSettings().PrinterName` で判定し `is_default=1` を記録する（R14.4）。
-- upsert 規則: (`machine_name`, `printer_name`) をキーに、存在すれば `last_seen_at`（UTC）・`is_active`・`is_default`・`updated_at` を更新、無ければ追加する（R14.3）。
-- 用途: 記録された稼働機分の `m_printer` が、Worker の printer_name 存在チェック（R5.9）の基礎となる（R14.5）。
+- upsert 規則: (`machine_name`, `printer_name`) をキーに、存在すれば `last_seen_at`（UTC）・`is_active=1`・`is_default`・`updated_at` を更新、無ければ追加する（追加行も現在インストール済みのため `is_active=1`、既定プリンタは `is_default=1`）（R14.3・R14.4）。
+- **自動無効化（R14.7）**: 起動時列挙の際、当該稼働機（`machine_name`）の既存 `m_printer` 行のうち **今回の列挙に存在しない**プリンタを `is_active=0`（無効）に更新する（退役検知）。**他の稼働機（別 machine_name）の行は一切変更しない**。
+- **存在チェックの正は実列挙（R14.5）**: printer_name 存在チェック（R5.9）の **正（source of truth）は、印刷時点における稼働機のリアルタイムな実インストール列挙**である。`m_printer` は記録・表示・将来のプリンタ選択のための **台帳（source of record）**であって、存在判定の唯一の正ではない。
 - 実装形態: 起動時サービス（`IHostedService`／Worker 起動処理内の初期化）として `CommonDbContext` 相当（db_common_dev 接続）で upsert する。マスタ upsert 自体は副作用を伴う統合対象（「Testing Strategy」参照）。
 
 #### 5. `row_version` 追加による楽観ロックの実効化
@@ -310,18 +311,21 @@ PrintAgent(Worker) の死活監視（1 行運用）。`m_smtp_agent_control` と
 | ID | `id` | int IDENTITY(1,1) | NOT NULL | — | 主キー（PK） |
 | 稼働マシン名 | `machine_name` | nvarchar(100) | NOT NULL | — | 稼働機識別。プリンタは機ごとに異なる（R14.6） |
 | プリンタ名 | `printer_name` | nvarchar(200) | NOT NULL | — | インストール済みプリンタ名 |
-| 既定プリンタ | `is_default` | bit | NOT NULL | 0 | 稼働機の既定プリンタなら 1（R14.4） |
-| 有効フラグ | `is_active` | bit | NOT NULL | 1 | 現在も列挙されるか（退役検知に利用可） |
+| 既定プリンタ | `is_default` | bit | NOT NULL | 0 | 稼働機の既定プリンタなら 1。**必須（NOT NULL）**（R14.2・R14.4） |
+| 有効フラグ | `is_active` | bit | NOT NULL | 1 | 現在も列挙されるか（1=有効/インストール済み, 0=退役）。起動時列挙で今回列挙に無い当該機の行は自動的に `is_active=0` に更新（R14.7）。**必須（NOT NULL）**（R14.2） |
 | 最終確認日時 | `last_seen_at` | datetime2 | NULL | — | 起動時列挙で最後に確認した日時(UTC)（R14.3） |
 | 作成日時 | `created_at` | datetime2 | NOT NULL | — | 追加日時(UTC) |
 | 更新日時 | `updated_at` | datetime2 | NOT NULL | — | 更新日時(UTC) |
-| 行バージョン | `row_version` | rowversion | NOT NULL | — | 楽観ロック（`[Timestamp]`、自動採番） |
+| 行バージョン | `row_version` | rowversion | NOT NULL | — | 楽観ロック（`[Timestamp]`、自動採番）。**将来の管理画面編集での楽観ロックに備える**（R14.8） |
 
 **制約・インデックス**:
 
 - PK: `id`。
 - 一意キー: `UQ_m_printer_machine_printer`（`machine_name`, `printer_name`）— 同一機・同一プリンタの重複を防ぎ upsert のキーとする（R14.2）。
 - インデックス: `IX_m_printer_machine_name`（`machine_name`）— 稼働機単位でのプリンタ照会（存在チェック・将来のプリンタ選択）を支援。
+- `is_default`・`is_active` はいずれも **NOT NULL（必須）**列（R14.2）。`row_version` は現時点では自動登録専用だが、将来の管理画面編集での楽観ロック用に保持する（R14.8）。
+
+> 存在チェックの正に関する注記（R14.5）: `m_printer` は記録・表示・将来のプリンタ選択のための **台帳（source of record）**である。printer_name 存在チェック（R5.9）の **正（source of truth）は稼働機のリアルタイムな実インストール列挙**であり、`m_printer` マスタではない。
 
 ### エンティティ ↔ 物理列 対応
 
@@ -385,7 +389,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 
 ### Property 8: プリンタ解決の決定性
 
-*任意の* `printer_name`（NULL または指定）と稼働機のインストール済みプリンタ集合に対して、プリンタ解決は決定的に次のいずれかを返す: `printer_name` が NULL なら **既定プリンタ** が選択され、非 NULL かつ集合に含まれれば **当該プリンタ**、非 NULL かつ集合に含まれなければ **「印刷不可（status 9 エラー）」** と判定される。この解決は純粋関数として PBT 可能である（プリンタマスタ `m_printer` への upsert 自体は副作用のため統合テストで検証する）。
+*任意の* `printer_name`（NULL または指定）と稼働機の **リアルタイム実インストール列挙集合**（存在判定の正＝source of truth。`m_printer` マスタではない）に対して、プリンタ解決は決定的に次のいずれかを返す: `printer_name` が NULL なら **既定プリンタ** が選択され、非 NULL かつ当該実列挙集合に含まれれば **当該プリンタ**、非 NULL かつ実列挙集合に含まれなければ **「印刷不可（status 9 エラー）」** と判定される。この解決は（実インストール集合を入力として与える）純粋関数として PBT 可能である（プリンタマスタ `m_printer` への upsert・自動無効化自体は副作用のため統合テストで検証する）。
 
 **Validates: Requirements 5.8, 5.9, 14.5**
 
@@ -406,7 +410,7 @@ Worker の実挙動（実印刷・`pdf_path` 不存在ハンドリング・実 h
 | 楽観ロック競合（Worker のジョブ取得時） | `PrintJobWorker` | 既存の `catch (DbUpdateConcurrencyException)` で当該ジョブをスキップ（他インスタンス取得済み）。`row_version` 追加により実効化。（R2.2 / D4 / Property 9） |
 | 再出力対象が不正状態（0/1/2） | Common_PrintMonitor `OnPostReprintAsync` | 遷移せず「再出力できる状態ではありません（現在: 〜）」を通知。（Property 3 / R9.4） |
 | 再出力対象が pdf_path 無し | Common_PrintMonitor `OnPostReprintAsync` | 遷移せず「印刷ソース（PDF）が無いため再出力できません」を通知。（Property 3 / R9.5・D6） |
-| printer_name 指定だが稼働機に未インストール | `PrintJobWorker`（プリンタ解決） | `print_status=9`、`error_message`「指定プリンタが存在しません」を設定。**印刷を試行しない**。（R5.9 / D8 / Property 8） |
+| printer_name 指定だが稼働機の実列挙に存在しない | `PrintJobWorker`（プリンタ解決／存在判定の正＝稼働機のリアルタイム実インストール列挙。`m_printer` ではない） | `print_status=9`、`error_message`「指定プリンタが存在しません」を設定。**印刷を試行しない**。（R5.9 / D8 / R14.5 / Property 8） |
 | 印刷失敗（Worker） | `PrintJobWorker` | `print_status=9`、`error_message` に内容（500 文字で切詰）を設定。印刷ロジック不変。（R5.5 / D4） |
 | pdf_path 指定ファイルが不存在（Worker） | `PrintJobWorker`（サイレント印刷） | 印刷失敗として `print_status=9`、`error_message` にパス不存在を設定。（D6 / R5.5） |
 | heartbeat 更新失敗（Worker） | `PrintJobWorker.UpdateHeartbeatAsync` | ログのみ。ジョブ処理は継続（不変）。（D4） |
