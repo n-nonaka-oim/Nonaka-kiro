@@ -39,7 +39,7 @@
     - _Requirements: 9.1_
 
 - [ ] 2. 印刷出力パス解決サービス（`IPrintOutputPathService`）
-  - [ ] 2.1 `IPrintOutputPathService`/`PrintOutputPathService` 実装 + DI 登録
+  - [x] 2.1 `IPrintOutputPathService`/`PrintOutputPathService` 実装 + DI 登録
     - `MaterialModule/Services/IPrintOutputPathService.cs`（public interface）＋ `PrintOutputPathService.cs`（internal 実装、DemoModule パターン）を作成
     - `GetBasePathAsync`: `MaterialDbContext` から `m_print_output_path` の有効行（`is_active = true`）を1件取得。実行時に毎回取得（キャッシュしない＝R9.2）。有効行なしは既定値 `\\ojiadm23120073\app_share\PrintAgent` へフォールバックし `LogWarning`
     - 純関数 `BuildFullPath(basePath, fileName)`（`internal static`、`Path.Combine`）を切り出す

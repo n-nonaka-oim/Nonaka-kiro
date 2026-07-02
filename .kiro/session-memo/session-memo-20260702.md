@@ -553,3 +553,16 @@
 ### 次（wave1）
 - **2.1** `IPrintOutputPathService`/`PrintOutputPathService` 実装＋DI（`AddMaterialModule` に Scoped 登録・純関数 `BuildFullPath` internal static 切り出し・有効行なし既定値フォールバック+LogWarning・無キャッシュ）。DemoModule パターン（public interface + internal 実装）。
 - 未コミット: MaterialModule（1.2 SQL）・Nonaka/.kiro（tasks 1.2/1.3・docs/db 2ファイル・本memo）。
+
+---
+
+## タスク2.1 完了（wave1・パス解決サービス）
+
+- **2.1** `IPrintOutputPathService`（public interface）＋`PrintOutputPathService`（internal sealed・primary ctor）新規。`GetBasePathAsync`＝`PrintOutputPaths` を `AsNoTracking().Where(IsActive).OrderByDescending(Id).Select(BasePath).FirstOrDefaultAsync`（実行時毎回・無キャッシュ R9.2）。有効行なし→既定 const `\\ojiadm23120073\app_share\PrintAgent` フォールバック＋日本語 LogWarning（R9.3）。純関数 `internal static BuildFullPath(basePath,fileName)=Path.Combine` 切り出し。`MaterialModuleExtensions.AddMaterialModule` に `AddScoped<IPrintOutputPathService,PrintOutputPathService>()` 追加（自己完結・MainWeb不変更）。診断クリア。
+- 留意（軽微）: `FaxDispatchOptions.PdfShareRoot` の既定リテラルは大文字 `OJIADM23120073`（同UNC・大小無関係）。本サービス既定値は規約どおり小文字。実害なし。
+- tasks 2.1＝[x]。
+
+### 次（wave2）
+- **2.2*** BuildFullPath 例示テスト（任意・MaterialModule.Tests）。
+- **3.1** `PrintJobService` に純関数 `ExtractGroupKey`（発注番号先頭3セグメント・DispatchEnqueueService と同一規則）／`BuildPdfFileName`（`{reportType}_{referenceCode}_{yyyyMMddHHmmssfff}.pdf`）を internal static で切り出し。
+- 未コミット: MaterialModule（2.1 Services 2ファイル・Extensions）・Nonaka/.kiro（tasks 2.1・memo）。
