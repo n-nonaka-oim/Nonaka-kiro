@@ -342,3 +342,50 @@
 - CP10（全テスト）：7.5 実DB実行を含め最終確認。
 - 実行系: DDL適用（t_print_queue/m_print_agent_control）・実印刷・カットオーバー（dispatch-monitoring-consolidation 前提）。
 - 未コミット: Nonaka/.kiro（tasks CP5・本memo）。
+
+---
+
+## 次アクション：ビルド→/Common/PrintMonitor 表示確認（スモーク）
+
+- ユーザーが CommonModule ページ権限（m_content: area=Common/page=PrintMonitor/Index）を登録。
+- 手順: ①db_common_dev に DDL 2本適用（create_t_print_queue.sql / create_m_print_agent_control.sql）→ ②slnCoCore ビルド→MainWeb 起動 → ③ログイン→ /Common/PrintMonitor 表示確認。
+- **正常時**: 一覧空・サマリ0・PrintAgent「応答なし」（db_common_dev 向け PrintAgent 未起動のため正常）・SmtpMonitor と一貫スタイル。
+- **異常時の切り分け**: 500「Invalid object name 't_print_queue'」＝DDL未適用／トップへリダイレクト＝権限未登録／null例外・崩れ＝Kiro 対応。
+- 表示確認OK＝CommonModule 側の疎通完了（ルーティング/認可/DB接続）。実データ投入は dispatch-monitoring-consolidation 実装後。
+- 現状コミット済み: print-platform 実装・PBT・CP5・docs。未コミットなし（tasks/memo 直近コミット済み）。
+- 表示確認の結果待ち → OKなら dispatch-monitoring-consolidation 着手 or 一区切り。
+
+---
+
+## /Common/PrintMonitor 実機表示確認 OK（CommonModule 疎通完了）
+
+- 経緯: 初回アクセスで `SqlException: オブジェクト名 'm_print_agent_control' が無効` → **DDL未適用**（想定内・コード起因でない）。ユーザーが db_common_dev に `create_m_print_agent_control.sql`＋`create_t_print_queue.sql` を適用。
+- 再アクセスで **表示OK**（スクショ確認）: タイトル「プリント出力監視」／死活「応答なし・最終応答:記録なし」（PrintAgent 未起動で正常）／サマリ 待機・処理中・完了・エラー=全0／フィルタ（ステータス/レポート種別/キーワード/作成日From-To）／一覧「該当するジョブはありません。」／自動更新チェック・件数セレクタ・SmtpMonitor と一貫スタイル。
+- → **CommonModule 側の疎通確認完了**（MainWeb ホスト・ルーティング・DbPermissionCheck 認可・db_common_dev 接続・EF クエリ・Razor 描画）。print-platform の Web 側は実機で完全動作。
+- DDL適用済み（db_common_dev）: t_print_queue / m_print_agent_control。
+
+### print-platform 到達サマリ（実機確認まで完了）
+- 実装・PBT(16緑/1skip)・CP5・ドキュメント・退役クリーンアップ・**実機表示確認** すべて完了。
+- 残＝実データを流す一連（投入→PrintAgent印刷）＝依存spec **dispatch-monitoring-consolidation**（MaterialModule で PDF 生成→pdf_path 投入・旧Material_PrintMonitor 廃止・導線を /Common/PrintMonitor へ）。Property9 実DB検証・カットオーバーもこの後。
+
+### 次アクション
+- print-platform は一区切り（Web側は実機動作確認済み）。
+- 次の大きな一手＝ **dispatch-monitoring-consolidation**（requirements/design/tasks は既存？ 要確認 → 着手）。
+
+---
+
+## 関連資料更新：未実装案件一覧（print-platform 完了を反映）
+
+- `.kiro/docs/未実装案件一覧.md`:
+  - ヘッダ最終更新を 2026/07/02・print-platform 実装/実機確認完了に更新。
+  - サマリ表: 旧「PrintAgent 資材固有 t_order_reports」＝置換完了／「PrintAgent 方向性2」→「共通印刷基盤 print-platform ＝実装・実機確認完了(2026/07/02)」／新規「dispatch-monitoring-consolidation＝未着手（次）」を追加。
+  - B-2 節に【更新 2026/07/02】追記：print-platform spec として実装・実機確認完了（t_print_queue/pdf_path必須/print_payload廃止・CommonModule 投入/監視・PrintAgent 印刷専用化・PBT緑・表示OK）。残は dispatch-monitoring-consolidation（投入側/旧Monitor廃止/カットオーバー）。
+- 既更新: system-architecture.md（印刷専用・slnCoCore構成）／テーブル定義書・ER図（print-platform テーブル）／PrintAgent docs（改訂ノート）／CommonModule docs README。
+
+### 現状（再開用チェックポイント）
+- **print-platform：実装・テスト(PBT)・ドキュメント・実機表示確認まで完了・コミット済み**。Web側は db_common_dev の DDL 適用済みで /Common/PrintMonitor 稼働。
+- 次の一手＝**dispatch-monitoring-consolidation**（requirements/design は既存有り＝session-memo 20260701 記載。tasks 未作成）。着手時: 既存 requirements/design を確認 → tasks 生成 → 実装（MaterialModule で PDF生成→IPrintQueueService 投入・旧Material_PrintMonitor廃止・導線更新）→ カットオーバー。
+- 未コミット: `.kiro/docs/未実装案件一覧.md`・session-memo（本追記）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260702）。
