@@ -177,3 +177,20 @@
 
 ### コミット状況（本日 7/3・変更なし＝実装は既コミット済み）
 - 実装コミット: CommonModule `8f6161a` / MaterialModule `317c4a5` / PrintAgent `b03c359` / Nonaka `bc00ac0`・`c0819e1`・`a27f099`・`4cb8b19`。今回の検証はユーザー環境作業（コード変更なし）。
+
+---
+
+## dispatch 10.2 完了（二重生成回避・PDF生成保存の一元化）
+
+- **新規 scoped `IApprovalReportPdfProvider`/`ApprovalReportPdfProvider`**（MaterialModule/Services）: `GetOrCreateOrderApprovalPdfAsync(groupKey)` が生成(OrderPdfService)→保存(IPrintOutputPathService 由来ベースパス)→フルパス返却。**スコープ内 `Dictionary<groupKey,fullPath>` キャッシュ**で groupKey ごと1回だけ生成・保存。`BuildPdfFileName` は本プロバイダが所有。DI: `AddScoped`（AddMaterialModule）。
+- **PrintJobService**: 生成・保存ブロックをプロバイダ呼び出しに置換（IOrderPdfService/IPrintOutputPathService 注入を除去）。OutputType ゲート（2=skip、{1,3}=投入）は不変。`BuildPdfFileName` 除去、`ExtractGroupKey` 維持。
+- **DispatchEnqueueService**: 生成・保存ブロック（`_options.PdfShareRoot` 保存）をプロバイダ呼び出しに置換（IOrderPdfService 注入除去・`BuildPdfFileName` 除去）。他 FAX ロジック（ShouldDispatchFax/dedup/宛先/件名本文/test-send/dispatch log）不変。`_options` は ConfigKey/FromAddress/TestSend* で継続使用（PdfShareRoot 参照のみ消失・プロパティは残置）。
+- **不変条件達成**: ApprovalService が PrintJobService→DispatchEnqueueService を同一スコープで順に呼ぶため、OutputType=3 は PrintJobService が生成・キャッシュ→FAX 経路が同一パス再利用（単一生成）。=2 は FAX 側が初回生成。=0/1 は印刷側のみ。保存先の単一真実源＝m_print_output_path ベースパス。
+- 診断クリア。公開シグネチャ（IPrintJobService/IDispatchEnqueueService）不変。tasks 10.2＝[x]。
+- コミット: MaterialModule `b68dc1c`。
+- ⚠ FAX PDF の保存が `FaxDispatchOptions.PdfShareRoot` → マスタ由来ベースパスに一元化（現行値一致・SmtpAgent は渡された pdf_path を読むため無影響）。ファイル名も `order_...` → `order_approval_...` に統一。ユーザーは slnCoCore 再ビルドで確認。
+
+### dispatch 残
+- 10.3*（Property2 追随テスト・任意）。
+- print-platform 任意PBT 12.14-12.16・CP 8/10。
+- SmtpAgent FAXテスト送信（未実装案件 I-3）。

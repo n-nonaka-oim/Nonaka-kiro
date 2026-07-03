@@ -131,7 +131,7 @@
     - `IPrintJobService` の公開シグネチャは維持（呼び出し元 `ApprovalService` を変更しない）
     - _Requirements: 4.2, 4.3, 8.2_
 
-  - [ ] 10.2 二重生成回避の整合確認（PrintJobService と DispatchEnqueueService の PDF 生成・保存責務分担）
+  - [x] 10.2 二重生成回避の整合確認（PrintJobService と DispatchEnqueueService の PDF 生成・保存責務分担）
     - `OutputType = 3`（両方）のグループで同一グループ PDF が二重生成・二重保存されないよう、両経路（`PrintJobService`／`DispatchEnqueueService`）の生成条件を突き合わせて整合させる（保存の一元化＝印刷経路が保存し FAX 経路は保存済み PDF を参照）
     - design「二重生成の回避（PDF生成責務の分担）」の不変条件（いかなるグループの PDF も二重生成されない）に一致させる
     - _Requirements: 8.2_
