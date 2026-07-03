@@ -228,25 +228,25 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - `.kiro/docs/db/ER図.md` に `m_printer`（db_common_dev 配置）を追記
     - _Requirements: 14.1_
 
-  - [ ] 12.9 PrintAgent `TPrintQueue` から `output_type` を削除
+  - [x] 12.9 PrintAgent `TPrintQueue` から `output_type` を削除
     - PrintAgent（別ソリューション `\\OJIADM23120073\Labs\WindowsService\PrintAgent`）の `TPrintQueue` から `output_type` を削除し、CommonModule 側 `TPrintQueue` と同一テーブル・同一列にマップされるよう一致させる
     - _Requirements: 1.9, 5.6_
 
-  - [ ] 12.10 PrintAgent `PrintJobWorker` の印刷可否ゲートを撤去
+  - [x] 12.10 PrintAgent `PrintJobWorker` の印刷可否ゲートを撤去
     - `PrintJobWorker` から `output_type` による印刷可否判定（`shouldPrint`）を撤去し、取得したジョブを全て印刷する（印刷対象判定は投入側が実施済み・キューには印刷対象のみが存在, D7）
     - _Requirements: 5.6_
 
-  - [ ] 12.11 PrintAgent `PrintJobWorker` にプリンタ解決・存在チェックを実装
+  - [x] 12.11 PrintAgent `PrintJobWorker` にプリンタ解決・存在チェックを実装
     - 出力先プリンタを `printer_name ?? 既定プリンタ` で解決する
     - `printer_name` が指定されており、かつ印刷時点の稼働機のリアルタイム実列挙（`System.Drawing.Printing.PrinterSettings.InstalledPrinters`）に存在しない場合は、印刷を試行せず `print_status=9`・`error_message`「指定プリンタが存在しません」を設定する。存在判定の正は実列挙であり `m_printer` マスタではない（D8）
     - _Requirements: 5.8, 5.9, 14.5_
 
-  - [ ] 12.12 PrintAgent エンティティ `MPrinter` を追加し `PrintAgentDbContext` に DbSet を追加
+  - [x] 12.12 PrintAgent エンティティ `MPrinter` を追加し `PrintAgentDbContext` に DbSet を追加
     - PrintAgent 名前空間に `m_printer` へマップする `MPrinter`（upsert 用マッピング）を実装し、CommonModule 側 `MPrinter` と同一テーブル・同一列に一致させる
     - `PrintAgentDbContext` に `DbSet<MPrinter>`（`ToTable("m_printer")`）を追加
     - _Requirements: 14.3_
 
-  - [ ] 12.13 PrintAgent 起動時プリンタ列挙→`m_printer` upsert サービスを実装
+  - [x] 12.13 PrintAgent 起動時プリンタ列挙→`m_printer` upsert サービスを実装
     - 起動時サービス（`IHostedService` 等）で `System.Drawing.Printing.PrinterSettings.InstalledPrinters` を列挙し `m_printer`（db_common_dev）へ upsert する
     - 既定プリンタ（`new PrinterSettings().PrinterName`）は `is_default=1`、現存プリンタは `is_active=1`（存在すれば `last_seen_at`(UTC)・`updated_at` 更新、無ければ追加）
     - 当該機（machine_name）の今回列挙に無い行は `is_active=0` に自動無効化する。他機（別 machine_name）の行は変更しない
