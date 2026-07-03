@@ -256,3 +256,48 @@
 
 ### コミット（本追加分）
 - MaterialModule `c73dac1`（seed/sample SQL）・`ef4e4ac`（OrderPdfService 訂正）。
+
+---
+
+## 🔴 チェックポイント（コンテキスト80%・new-session ハンドオフ用）
+
+### 現在地（2026/07/03・印刷経路 実運用調整フェーズ）
+- **新Print仕様（output_type廃止・投入側ゲート・m_printerマスタ・プリンタ解決・二重生成回避10.2）＝実装・実紙印刷まで完了**。DB重複テーブル整理＋旧3テーブルDROP＋ドキュメント整合＝完了。
+- **発注書兼納入依頼書PDF（OrderPdfService）の実運用レイアウト調整を実施中**。ダミーマスタ＋サンプル発注SQLで実機確認しながら微調整している。
+
+### 本日のPDF/採番 調整（コミット済み・MaterialModule）
+- `ef4e4ac`: 発送先コード（）表示追加（グループ版・発送先名直下10pt）＋フォント Yu Gothic→**MS PGothic**（両版＋承認印SVG）。→ 実機でゴシック表示OK確認済み。
+- `941380b`: グループ版ヘッダ（発送先/自社情報）に `Column.Spacing(4)` で行間確保。→ 確認OK。
+- `f1e6554`: ①明細テーブル行高を約1.8倍（`RowMinHeight=26f`・MinHeight＋AlignMiddle・データ行のみ）／②発注番号採番グループ化キー `(DestinationCode,OutputType)`→**`(DestinationCode,OutputType,UserId)`**（発注者を区分に追加＝同一送付先でも発注者別で別発注書）。
+
+### テスト用SQL（コミット済み・MaterialModule/docs/sql）
+- `seed_sample_masters.sql`（`c73dac1`）: 再利用ダミーマスタ 品目`SAMPLE-0001`／仕入先`SUP001`／送付先`DEST001`（m_delivery_locations・section_idにコード格納）／購買条件`SAMPLE-COND-0001`（サジェスト表示の要）。**ユーザーが db_material_dev で実行済み→サジェストに「SAMPLE」で表示OK確認済み**。
+- `sample_order_approval_10lines.sql`（`a63a5fa`）: 同銘柄10件・承認待ち投入→承認で1グループ枝番001-010→発注書10明細印刷。`@output_type`可変(1/2/3)、発送先FAX=**06-6487-1033**（FAX送信テスト用）。
+- ※ サジェスト実装＝`MasterService.SearchItemsAsync`：m_purchase_conditions を is_active=1 かつ item_id 非NULL かつ item_code/item_text の Contains で検索→m_items 突合。Orders/Create の仕入先/送付先ドロップダウンは db_factory_dev 参照（別DB）。
+
+### 🟡 次アクション（新セッションで最優先）
+- **押印枠・押印を1.5倍にする**（発注書グループ版 `GenerateGroupOrderPdfAsync` の承認印スタンプ）。
+  - 現状: 右カラム内 stampRow。`stampRow.ConstantItem(80).Border(0.5f)` の押印枠、内側に `innerStamp.RelativeItem().Height(40)`（罫線）＋ `Height(40).Padding(3).Border(1.5f)` の内枠。名前 `Height(20)`・日付 `Height(11)`・フォント nameFontSize（2文字10/3文字8/4文字以上7）・日付6pt。
+  - 対応方針: 枠サイズ（ConstantItem(80)→~120、Height(40)→~60）と内枠 Height、名前/日付フォントサイズ、Height(20)/(11) を約1.5倍に拡大。スクショでは押印枠が小さく名前が枠に収まりきらない印象（「屋」＝大西の姓が縦に潰れ気味）→ 拡大で改善。
+  - 位置: `MaterialModule/Services/OrderPdfService.cs` の `GenerateGroupOrderPdfAsync` 内 stampRow ブロック（右カラム）。
+  - ※単一版 `GenerateOrderPdfAsync` は SVG丸印方式（別実装）。印刷/FAX はグループ版のみ→グループ版を優先。
+
+### その後の残（優先度順）
+1. 押印枠1.5倍（上記）→ 実機確認。
+2. 行高/件数バランス調整（`RowMinHeight` 微調整・1ページ収容確認）。必要なら単一版もフォント/レイアウト整合。
+3. FAX送信テスト（`@output_type=3`）＝**未実装案件 I-3**（FaxDispatch設定・SmtpAgent config_key 整理）が前提。
+4. 任意PBT（print-platform 12.14-12.16／dispatch 10.3）・CP 8/10。
+5. 旧テーブル J-2（t_order_reports 保全後DROP）。
+
+### ビルド/実行（ユーザー）
+- slnCoCore 再ビルドで OrderPdfService/OrderService 変更反映 → 承認→印刷で確認。
+- PrintAgent: SkipPrint=false・DefaultPrinterName=OJP-33094・SumatraPDF配置済（C:\PrintAgent\Tools\）。db_common_dev接続。
+- SQL実行順: seed_sample_masters.sql → sample_order_approval_10lines.sql → Approvals承認。
+
+### コミット状況（本日 7/3 全コミット済み・未pushの可能性あり）
+- MaterialModule（別git）: `cb78880`→…→`f1e6554`（新Print実装・10.x・PDF調整・sample SQL）。
+- CommonModule（別git）: `8f6161a`。PrintAgent（別git）: `b03c359`。Nonaka(.kiro): print-platform/dispatch spec改訂・docs/db整合・未実装案件J/I-3・memo 一連。
+- ※各リポジトリとも未pushコミットが積まれている（push はユーザー判断）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**押印枠・押印の1.5倍化**（OrderPdfService グループ版 stampRow）。
