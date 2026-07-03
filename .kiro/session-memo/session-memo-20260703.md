@@ -54,3 +54,46 @@
 
 ## 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260703）。
+
+---
+
+## レビュー確定＋2 spec の spec更新 完了（実装前フェーズ完了）
+
+### ユーザー決定（全確定）
+1. output_type=MaterialModule送信パラメータ（0=保存のみ/1=印刷/2=FAX/3=両方）。t_print_queue は持たない。印刷投入ゲート={1,3}。
+2. プリンタ存在チェックは**実列挙が正**、m_printer は台帳。is_default/is_active 必須。
+3. 消えたプリンタは起動時 is_active=0（当該機のみ・他機不変）。
+4. m_printer に row_version 付与（将来のWeb編集の楽観ロック）。
+5. EnqueueAsync 破壊的変更（outputType 引数削除）承認。
+
+### print-platform（CommonModule）spec 更新 完了・コミット
+- requirements: R1.9(output_type列なし)・R4.7(投入契約output_typeなし)・R5.6(全印刷)・R5.8/5.9(プリンタ解決/存在チェック=実列挙)・**R14(m_printer+起動時upsert+is_active自動無効化+row_version)**。PrintStatus 1/2/3/9。
+- design: D7(output_type廃止)・D8(プリンタ解決/存在チェック/マスタ・実列挙が正)・EnqueueAsync から outputType 削除・m_printer テーブル定義・Property8(プリンタ解決の決定性)・実装同期注記(output_type撤去=tasksで是正)。
+- tasks: **新タスク群12**（12.1-12.5 output_type撤去／12.6-12.8 m_printer entity/DDL/docs／12.9-12.13 PrintAgent(output_type削除・ゲート撤去・プリンタ解決/存在チェック・MPrinter・起動時upsert)／12.14-12.16 テスト）。wave11-14 追加。
+- コミット: Nonaka `49ad7fb`(req/design初版)・`0a57b7d`(レビュー反映)・`e5ecfbc`(tasks群12)。
+
+### dispatch-monitoring-consolidation（MaterialModule）spec 更新 完了・コミット
+- requirements: Glossary OutputType 全意味づけ・PrintStatus 1/2/3/9。R4 に投入ゲート{1,3}・EnqueueAsync output_type非送出 AC 追加。R8.2 PDF生成保存は全output_type・投入のみ条件付き。
+- design: EnqueueAsync signature から outputType 削除・承認フロー mermaid にゲート分岐・PrintJobService改修手順(ゲート/二重生成回避)・**二重生成の回避節**（PrintJobService=OutputType{0,1,3}生成／OutputType=2 は FAX経路担当）・Property2 更新・投入列対応から output_type 削除・Open Decision4。
+- tasks: **新タスク群10**（10.1 PrintJobService を OutputType ゲート是正＋EnqueueAsync outputType 削除＋二重生成回避／10.2 二重生成整合確認／10.3* Property2 追随）。wave7-9 追加。既存 3.2 は改定前実装として保持し 10 で是正。
+- コミット: Nonaka `ab4bad5`。
+
+## 現状
+- **print-platform／dispatch 双方の requirements/design/tasks が新Print仕様で整合・全コミット済み**。実装未着手（spec のみ）。
+- ⚠ 既存実装との差分（是正が必要な実コード）:
+  - CommonModule: TPrintQueue(output_type削除)・IPrintQueueService/PrintQueueService(outputType引数削除)・create_t_print_queue.sql(output_type列削除+ALTER)・Common_PrintMonitor(参照確認)・新MPrinter entity+DbSet+DDL。
+  - PrintAgent: TPrintQueue(output_type削除)・PrintJobWorker(ゲート撤去・プリンタ解決/存在チェック)・MPrinter+DbContext・起動時列挙upsertサービス。
+  - MaterialModule: PrintJobService(OutputTypeゲート{1,3}・EnqueueAsync outputType削除・二重生成回避)。
+- 実DB: t_print_queue から output_type 列 DROP・m_printer 作成（ユーザー）。
+
+## 次アクション（実装フェーズ・最小単位・1つずつ）
+実装順の推奨（依存: CommonからPrintAgent/Material へ）:
+1. **CommonModule**: 12.6 MPrinter entity+DbSet → 12.1 TPrintQueue output_type削除 → 12.2 EnqueueAsync outputType削除 → 12.3 DDL(output_type削除+m_printer 12.7) → 12.4 Monitor確認 → 12.5/12.8 docs。※CommonModule.sln ビルド確認（ユーザー）。
+2. **MaterialModule**: 10.1 PrintJobService ゲート{1,3}+EnqueueAsync呼び出し是正+二重生成回避 → 10.2 整合。※MaterialModule/slnCoCore ビルド（ユーザー）。※EnqueueAsync シグネチャ変更で呼び出し元が一致するのは Common 側是正後。
+3. **PrintAgent**: 12.9 TPrintQueue output_type削除 → 12.10 ゲート撤去 → 12.11 プリンタ解決/存在チェック → 12.12 MPrinter+DbContext → 12.13 起動時列挙upsert。※PrintAgent.sln ビルド（ユーザー）。
+4. テスト（任意PBT: Property8・Property2追随・print_status集合更新・m_printer統合）。
+- ⚠ ビルド順の注意: EnqueueAsync 引数削除（Common 12.2）と呼び出し元（Material 10.1）は**セットで**ないと slnCoCore がビルド不可（中間状態）。Common→Material を続けて実施し、その後まとめてビルド確認する。
+
+## コミット状況（本日 7/3）
+- Nonaka: `49ad7fb`→`0a57b7d`→`e5ecfbc`→`ab4bad5`（print-platform req/design/tasks・dispatch req/design/tasks・memo 20260703 初版）。
+- `.config.kiro`（dispatch）は誤って書き換わった specId をコミット版 `b7e4c2a1` に復元済み（git checkout）。
