@@ -97,3 +97,45 @@
 ## コミット状況（本日 7/3）
 - Nonaka: `49ad7fb`→`0a57b7d`→`e5ecfbc`→`ab4bad5`（print-platform req/design/tasks・dispatch req/design/tasks・memo 20260703 初版）。
 - `.config.kiro`（dispatch）は誤って書き換わった specId をコミット版 `b7e4c2a1` に復元済み（git checkout）。
+
+---
+
+## 実装フェーズ：コア実装 完了（3モジュール・全コミット済み）
+
+### CommonModule（別git・toplevel=Nonaka/CommonModule）＝コミット `8f6161a`
+- 12.1 TPrintQueue から output_type 削除（＋クラス/プロパティ XMLコメントの 0=対象外 除去）。
+- 12.2 IPrintQueueService/PrintQueueService の EnqueueAsync から outputType 引数削除（新シグネチャ: module/reportType/referenceCode/pdfPath/printerName/copies/ct）。
+- 12.3 create_t_print_queue.sql から output_type 列削除・CHECK を IN(1,2,3,9)・print_status コメント是正／新規 alter_t_print_queue_drop_output_type.sql（DEFAULT制約動的削除→DROP COLUMN・COL_LENGTH ガード）。
+- 12.4 Common_PrintMonitor に output_type 参照なし（確認済み）。
+- 12.6 MPrinter エンティティ新規＋CommonDbContext に DbSet<MPrinter> Printers 追加。
+- 12.7 create_m_printer.sql 新規（id/machine_name/printer_name/is_default/is_active/last_seen_at/created_at/updated_at/row_version・UQ(machine_name,printer_name)・IX）。
+- 診断クリア。CommonModule.sln 単独ビルド可。
+
+### MaterialModule（別git）＝コミット `317c4a5`
+- 10.1 PrintJobService.CreateOrderApprovalJobsAsync 是正: OutputType==2 は skip（FAX経路担当・二重生成回避）、PDF生成保存は {0,1,3}、印刷キュー投入ゲート {1,3}、EnqueueAsync から outputType 引数除去。IPrintJobService シグネチャ不変。診断クリア。
+- → **CommonModule の EnqueueAsync 契約変更と呼び出し元が一致。slnCoCore ビルド可能**。
+
+### PrintAgent（別git・Labs/WindowsService/PrintAgent）＝コミット `b03c359`
+- 12.9 TPrintQueue から output_type 削除。
+- 12.10 PrintJobWorker の output_type 印刷可否ゲート（shouldPrint）撤去＝取得ジョブ全印刷。
+- 12.11 プリンタ解決（printer_name ?? 既定）＋存在チェック（printer_name 明示指定かつ InstalledPrinters に無ければ status=9・「指定プリンタが存在しません」・印刷試行せず）。IsPrinterInstalled/TruncateError ヘルパ追加。
+- 12.12 MPrinter エンティティ＋PrintAgentDbContext DbSet（ToTable("m_printer")）。
+- 12.13 PrinterInventoryHostedService（IHostedService・起動時 InstalledPrinters 列挙→m_printer upsert・既定 is_default=1・現存 is_active=1・当該機の今回未列挙は is_active=0 自動無効化・他機不変・scoped DbContext・try/catch）。Program.cs に AddHostedService 登録。
+- **PrintAgent.csproj に System.Drawing.Common 8.0.* 追加**（PrinterSettings.InstalledPrinters に必要）。診断クリア（CA1416 Windows専用は許容）。
+
+### Nonaka(.kiro)＝コミット `bc00ac0`・`c0819e1`
+- docs/db: テーブル定義書・ER図（t_print_queue output_type削除・print_status 1/2/3/9・m_printer 追記）。
+- tasks 進捗: print-platform 12.1-12.13＝[x]、dispatch 10.1＝[x]。
+
+## 残（次回・任意/検証/協調）
+- **dispatch 10.2**（要コード確認）: OutputType=3（印刷+FAX）で PrintJobService と DispatchEnqueueService が同一グループ PDF を二重生成・二重保存しないよう整合。現状 10.1 は OutputType=2 を skip するのみで、=3 は両経路が各自生成する（要 DispatchEnqueueService レビュー・保存の一元化）。
+- 任意PBT: print-platform 12.14（Property8 プリンタ解決）・12.15（既存 Property1/3/7 の print_status 集合を {1,2,3,9} に更新）・12.16（m_printer upsert/自動無効化 統合）／dispatch 10.3（Property2 追随）。
+- 検証CP: print-platform 8/10。
+
+## ユーザー実行（ビルド/DDL/デプロイ）
+- **ビルド**: slnCoCore（CommonModule+MaterialModule・EnqueueAsync 契約セット是正済みで通るはず）／PrintAgent.sln（System.Drawing.Common 復元）。
+- **DDL（db_common_dev）**: alter_t_print_queue_drop_output_type.sql（既存 t_print_queue の output_type 列 DROP）＋create_m_printer.sql（新規）。※新規環境は create_t_print_queue.sql（output_type 無し版）でよい。
+- **PrintAgent 再デプロイ**: 起動時に m_printer へ自機プリンタ登録・印刷は printer_name/既定で実行。SkipPrint=false＋実プリンタ設定で実印刷確認。
+
+## コミット状況（本日 7/3 追加分）
+- CommonModule `8f6161a` / MaterialModule `317c4a5` / PrintAgent `b03c359` / Nonaka `bc00ac0`・`c0819e1`。
