@@ -98,6 +98,17 @@ erDiagram
     m_print_agent_control {
         int id PK
     }
+    m_printer {
+        int id PK
+        nvarchar machine_name
+        nvarchar printer_name
+        bit is_default
+        bit is_active
+        datetime2 last_seen_at
+        datetime2 created_at
+        datetime2 updated_at
+        rowversion row_version
+    }
 ```
 
 ### リレーション一覧（論理参照・FK制約なし・コード参照）
@@ -108,6 +119,7 @@ erDiagram
 
 > `t_print_queue` は全モジュール横断の共通印刷キュー。`t_smtp_queue`（FAX/メール送信）と対の共通基盤で、FK制約は持たず `reference_code`（発注番号等）で発生元を参照する。FAX関連列は持たない。
 > `m_print_agent_control` は PrintAgent(Worker) の死活監視（heartbeat）専用の1行運用テーブルで、他テーブルとリレーションを持たない（独立）。`m_smtp_agent_control` と対。
+> `m_printer` はインストール済みプリンタの台帳。PrintAgent が起動時に稼働機のプリンタを列挙し `(machine_name, printer_name)` をキーに upsert する。他テーブルと直接のリレーション（FK）を持たない**単独マスタ**（一意制約 `(machine_name, printer_name)`）。
 
 ---
 
@@ -216,3 +228,4 @@ erDiagram
 |-----------|----------|------|--------|
 | t_print_queue | 共通印刷キュー | トランザクション | 全モジュール横断の印刷ジョブ。1レコード=1印刷ジョブ。FAX列なし。`t_smtp_queue` と対 |
 | m_print_agent_control | PrintAgent死活監視 | マスタ | 印刷Worker生存状態(heartbeat)表示（独立・リレーションなし）。`m_smtp_agent_control` と対 |
+| m_printer | プリンタマスタ | マスタ | インストール済みプリンタ台帳。PrintAgent が起動時に列挙し upsert（独立・リレーションなし。一意 (machine_name, printer_name)） |

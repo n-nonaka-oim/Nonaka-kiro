@@ -124,7 +124,7 @@
     - _Requirements: 4.7_
 
 - [ ] 10. 新Print仕様追随（OutputType 投入側ゲート・EnqueueAsync outputType 除去・二重生成回避）
-  - [ ] 10.1 `PrintJobService.CreateOrderApprovalJobsAsync` を OutputType ゲートに是正
+  - [x] 10.1 `PrintJobService.CreateOrderApprovalJobsAsync` を OutputType ゲートに是正
     - 印刷キュー投入を代表 `OutputType ∈ {1,3}` のグループに限定する（`OutputType = 0`・`2` は印刷キューへ投入しない）。既存実装（3.2）は全グループを投入していたため、投入側ゲート判定を追加して是正する
     - `IPrintQueueService.EnqueueAsync` 呼び出しから `outputType` 引数を削除し、`print-platform` の改定シグネチャ `EnqueueAsync(module, reportType, referenceCode, pdfPath, printerName, copies, ct)` に一致させる（キューへ出力区分を持ち込まない）
     - PDF 生成・保存は `OutputType ∈ {0,1,3}` のグループで行い、`OutputType = 2`（FAXのみ）は FAX 経路（`DispatchEnqueueService`）が生成・保存・投入を担うため PrintJobService は PDF 生成も印刷投入も行わない（二重生成回避）

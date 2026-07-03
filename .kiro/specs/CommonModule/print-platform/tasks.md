@@ -192,38 +192,38 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - _Requirements: 1.1_
 
 - [ ] 12. 新Print仕様改訂（output_type 廃止・投入側ゲート・プリンタ解決・m_printer マスタ）
-  - [ ] 12.1 `TPrintQueue`（CommonModule）から `output_type` を削除
+  - [x] 12.1 `TPrintQueue`（CommonModule）から `output_type` を削除
     - `CommonModule/Data/Entities/TPrintQueue.cs` から `output_type`（`OutputType`）プロパティを削除し、列構成を design「Data Models」（output_type 無し, D7）に一致させる
     - _Requirements: 1.9_
 
-  - [ ] 12.2 `IPrintQueueService`/`PrintQueueService` から `outputType` 引数を削除
+  - [x] 12.2 `IPrintQueueService`/`PrintQueueService` から `outputType` 引数を削除
     - `IPrintQueueService`/`PrintQueueService`（`CommonModule/Services/`）の `EnqueueAsync` から `outputType` 引数を削除（シグネチャ変更・破壊的。design「Components and Interfaces」の投入契約に一致）。呼び出し元の是正は `dispatch-monitoring-consolidation` が所有
     - _Requirements: 4.7_
 
-  - [ ] 12.3 DDL から `output_type` 列を削除（新規適用SQLも用意）
+  - [x] 12.3 DDL から `output_type` 列を削除（新規適用SQLも用意）
     - `CommonModule/docs/sql/create_t_print_queue.sql` から `output_type` 列を削除
     - 既存DBに対する `ALTER TABLE t_print_queue DROP COLUMN output_type` の適用SQL（またはコメント手順）を併記。実適用はユーザーが `db_common_dev` に対して行う旨を明記
     - _Requirements: 1.9_
 
-  - [ ] 12.4 `Common_PrintMonitor` の `output_type` 参照を撤去
+  - [x] 12.4 `Common_PrintMonitor` の `output_type` 参照を撤去
     - `Common_PrintMonitor`（PageModel／ビュー）に `output_type` を参照する列・フィルタ・表示が残っていないか確認し、あれば撤去する
     - _Requirements: 1.9_
 
-  - [ ] 12.5 テーブル定義書・ER図を output_type 削除・print_status 追随に更新
+  - [x] 12.5 テーブル定義書・ER図を output_type 削除・print_status 追随に更新
     - `.kiro/docs/db/テーブル定義書.md`・`.kiro/docs/db/ER図.md` の `t_print_queue` から `output_type` を削除し、print_status を 1/2/3/9 に追随
     - _Requirements: 1.9_
 
-  - [ ] 12.6 エンティティ `MPrinter` を追加し `CommonDbContext` に DbSet を追加
+  - [x] 12.6 エンティティ `MPrinter` を追加し `CommonDbContext` に DbSet を追加
     - `CommonModule/Data/Entities/MPrinter.cs` を `[Table("m_printer")]`／`[Column]`／`[Key]`／`[DatabaseGenerated(Identity)]`／`[Timestamp]` の作法で実装。列: id/machine_name/printer_name/is_default/is_active/last_seen_at/created_at/updated_at/row_version。is_default・is_active は NOT NULL
     - `CommonModule/Data/CommonDbContext.cs` に `DbSet<MPrinter> Printers` を追加。一意 (machine_name, printer_name)
     - _Requirements: 14.1, 14.2, 14.8_
 
-  - [ ] 12.7 `m_printer` の CREATE TABLE DDL を作成
+  - [x] 12.7 `m_printer` の CREATE TABLE DDL を作成
     - `CommonModule/docs/sql/` に `m_printer` の CREATE TABLE スクリプトを作成（db_common_dev・一意キー `UQ_m_printer_machine_printer`(machine_name, printer_name)・`IX_m_printer_machine_name`(machine_name)）
     - スクリプト冒頭に「実行はユーザーが `db_common_dev` に対して行う」旨をコメントで明記
     - _Requirements: 14.1, 14.2_
 
-  - [ ] 12.8 テーブル定義書・ER図に `m_printer` を追記
+  - [x] 12.8 テーブル定義書・ER図に `m_printer` を追記
     - `.kiro/docs/db/テーブル定義書.md` に `m_printer` の列名・日本語名・型・備考を追記
     - `.kiro/docs/db/ER図.md` に `m_printer`（db_common_dev 配置）を追記
     - _Requirements: 14.1_
