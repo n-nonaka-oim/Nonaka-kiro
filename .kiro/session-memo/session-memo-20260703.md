@@ -139,3 +139,41 @@
 
 ## コミット状況（本日 7/3 追加分）
 - CommonModule `8f6161a` / MaterialModule `317c4a5` / PrintAgent `b03c359` / Nonaka `bc00ac0`・`c0819e1`。
+
+---
+
+## 🎉 印刷経路 実機・実紙 検証完了（新Print仕様 End-to-End OK）
+
+### ユーザー実行の検証ログ（STEP1-4）
+- **STEP1（DDL・db_common_dev）完了**: alter_t_print_queue_drop_output_type.sql（output_type 列 DROP）＋ create_m_printer.sql（新規）適用。
+- **STEP2（PrintAgent）**: slnCoCore ビルドOK（ユーザー）。PrintAgent.sln リビルド（System.Drawing.Common 復元）・起動。
+- **STEP3 確認OK**:
+  - m_printer に自機（machine_name=OJIADM23120069）のプリンタ5件自動登録。既定=OJP-33094（is_default=1）、他 is_active=1（OneNote/OJP-22002/OJP-22001/Microsoft Print to PDF）。起動時列挙 upsert 実機動作確認。
+  - /Common/PrintMonitor 死活=「ポーリング中」・最終応答時刻更新（OJIADM23120069）。heartbeat 実機OK。
+- **STEP4 確認OK（実紙出力まで）**:
+  - 発注承認（output_type=1）→ PDF生成・保存（共有 \\ojiadm23120073\app_share\PrintAgent に実ファイル生成＝MaterialModule 側生成OK）→ t_print_queue 投入（module=material/order_approval/pdf_path・G201-260703-001/002）→ 完了(3) 遷移。
+  - 途中経緯（想定内・切り分け成功）:
+    1. SkipPrint=true のまま完了3＝ドライラン（紙出ず）→ appsettings 変更は**再起動必須**（_skipPrint/_defaultPrinter は起動時読込の readonly）。
+    2. 再起動後 SkipPrint=false で **status=9・error「SumatraPDF.exe が見つかりません: C:\PrintAgent\T...」**＝環境に SumatraPDF 未配置（エラーハンドリング＝FileNotFound→status9・PrintMonitor エラー表示が正しく動作）。
+    3. ユーザーが SumatraPDF を C:\PrintAgent\Tools\SumatraPDF.exe に配置 → 再出力 → **実紙出力 OK**。
+  - PrintAgent appsettings（OJIADM23120069）: CloudDb=db_common_dev / TempPdfDirectory=\\OJIADM23120073\app_share\PrintAgent / SumatraPdfPath=C:\PrintAgent\Tools\SumatraPDF.exe / DefaultPrinterName=OJP-33094 / SkipPrint=false。
+
+### 検証済み事項（実機）
+- MaterialModule: 承認→PDF生成・保存→IPrintQueueService 投入（output_type ゲート・EnqueueAsync 新シグネチャ）実機OK。
+- CommonModule: t_print_queue（output_type 無し）投入・PrintMonitor 表示・死活。
+- PrintAgent: t_print_queue 全印刷（ゲート撤去）・プリンタ解決（printer_name null→既定 OJP-33094）・SumatraPDF サイレント印刷・m_printer 起動時 upsert・エラー時 status9。
+- ⇒ **print-platform＋dispatch の印刷経路（output_type=1）は実データ・実紙で完全動作**。
+
+### 残（印刷基本経路には不要・任意/協調/別案件）
+- dispatch 10.2（output_type=3 の二重生成回避・DispatchEnqueueService 協調）＝印刷+FAX 同時時の最適化。output_type=1 印刷には影響なし。
+- 任意PBT: print-platform 12.14（Property8）/12.15（print_status 集合更新）/12.16（m_printer 統合）、dispatch 10.3（Property2 追随）。CP 8/10。
+- SmtpAgent FAXテスト送信（未実装案件 I-3・発注書テスト段階で着手）。
+- プリンタ選択UI・既定変更などの m_printer 管理画面（将来・スコープ外）。
+
+### 運用メモ（重要）
+- PrintAgent の appsettings（SkipPrint/DefaultPrinterName/SumatraPdfPath）変更は**再起動で反映**（起動時一度読込）。
+- printer_name 未指定ジョブは config の DefaultPrinterName にフォールバック（OS既定ではなく設定値）。実プリンタ名と完全一致必須。
+- SumatraPDF は各 PrintAgent 稼働機に配置が前提（C:\PrintAgent\Tools\SumatraPDF.exe）。
+
+### コミット状況（本日 7/3・変更なし＝実装は既コミット済み）
+- 実装コミット: CommonModule `8f6161a` / MaterialModule `317c4a5` / PrintAgent `b03c359` / Nonaka `bc00ac0`・`c0819e1`・`a27f099`・`4cb8b19`。今回の検証はユーザー環境作業（コード変更なし）。
