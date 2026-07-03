@@ -227,3 +227,32 @@
 
 ### コミット
 - MaterialModule `78a8c26`（DROP SQL）。Nonaka: `6fa7241`（整理記録初版）・`190df9d`（J-1確認反映）・本コミット（DROP後ドキュメント整合・memo）。
+
+---
+
+## Print イメージ訂正（発注書兼納入依頼書）＋再利用ダミーマスタ・サンプルSQL
+
+### OrderPdfService 訂正（コミット MaterialModule `ef4e4ac`）
+- **①発送先コード表示**: グループ版 `GenerateGroupOrderPdfAsync` で「{DestinationName} 御中」直下に `（{DestinationCode}）` を追加（12pt Bold の名前より小さい 10pt・非Bold）。単一版 `GenerateOrderPdfAsync` は既に「送付先コード：」行あり（据置）。
+- **②フォント**: 現行 `Yu Gothic`（環境により明朝フォールバック）→ **`MS PGothic`**（Windows標準ゴシック）に変更。両メソッドの `DefaultTextStyle` ＋ 単一版の承認印SVG `font-family` も変更。診断クリア。
+- ※印刷/FAX/DL いずれも OrderPdfService 経由（10.2 で一元化済）＝1箇所修正で全反映。要 slnCoCore 再ビルド。
+- ※MS PGothic は生成環境（Webサーバ）にインストール必須。フォールバックで意図と違う場合はフォント同梱（QuestPDF FontManager 登録）を検討＝要フォロー。
+
+### 再利用ダミーマスタ＋サンプル発注SQL（コミット MaterialModule `c73dac1`）
+- `MaterialModule/docs/sql/seed_sample_masters.sql`（新規・db_material_dev・冪等）: 品目 `SAMPLE-0001`／仕入先 `SUP001`（fax付）／送付先 `DEST001`（m_delivery_locations・code は section_id 格納）／購買条件 `SAMPLE-COND-0001`（通常フロー Orders/Create サジェストの要）。今後のテストで再利用可能。
+- `MaterialModule/docs/sql/sample_order_approval_10lines.sql`（更新）: 同銘柄10件を承認待ち(20)投入→Approvals で承認→1グループ枝番001-010→発注書10明細を印刷（1ページ収容確認）。マスタとコード/名称一致・item_id はマスタから解決。
+
+### 重要な調査結果・留意（subagent 発見）
+- Orders/Create の**仕入先/送付先ドロップダウンは db_factory_dev（FactoryDbContext）参照**。db_material_dev のシードだけでは通常入力ドロップダウンには出ない（品目サジェスト＋購買条件スナップショットは db_material_dev で機能）。ドロップダウン投入は別途 db_factory_dev 対応が必要（今回スコープ外）。
+- **m_purchase_conditions はモジュール規約で読み取り専用（SAPマスタ）**。本 seed の購買条件行は**テスト環境(db_material_dev)専用の手動シード**であり本番では実行しない旨をファイルに明記。通常フロー不要なら購買条件INSERTはスキップ可（t_orders サンプルは単体で動く）。
+- m_delivery_locations に code/部署/TEL/FAX 専用列なし → 送付先コードは section_id に格納。部署/TEL/FAX は t_orders スナップショット側で保持。
+- 単価型差異: m_purchase_conditions.unit_price=bigint(123) vs t_orders.unit_price=decimal(123.456)。
+
+### 実行順序（ユーザー）
+1. `seed_sample_masters.sql`（db_material_dev・任意: 購買条件は通常フロー用）
+2. `sample_order_approval_10lines.sql`（db_material_dev・10件投入）
+3. Approvals 画面で10件承認 → 発注書10明細を印刷 → 実紙で発送先コード表示・ゴシック体・1ページ収容件数を確認
+- ※ slnCoCore 再ビルド（OrderPdfService 変更反映）後に実施。
+
+### コミット（本追加分）
+- MaterialModule `c73dac1`（seed/sample SQL）・`ef4e4ac`（OrderPdfService 訂正）。
