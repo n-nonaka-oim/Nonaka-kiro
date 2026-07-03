@@ -48,9 +48,9 @@
 - **Common_PrintMonitor**: `CommonModule/Areas/Common/Pages/PrintMonitor`（`/Common/PrintMonitor`）。共通プリント基盤の印刷監視画面。設置・実装は `print-platform` が所有する。本 spec は導線の更新先として参照する。
 - **SmtpAgent**: `t_smtp_queue` のみを処理する Worker Service。リファクタ済みで `t_order_reports.fax_status` は処理しない。
 - **PrintAgent**: 印刷ジョブを処理する Worker Service（別ソリューション: `\\OJIADM23120073\Labs\WindowsService\PrintAgent`）。読取先変更は `print-platform` が所有する。本 spec では参照のみ。
-- **PrintStatus**: 印刷状態。0=対象外, 1=待機, 2=処理中, 3=完了, 9=エラー。
+- **PrintStatus**: 印刷状態（`print-platform` の `t_print_queue` が保持する値）。1=待機, 2=処理中, 3=完了, 9=エラー。0=対象外 は廃止（投入側ゲート化により、印刷キューには印刷対象のみを投入するため「対象外」状態を持たない）。
 - **FaxStatus**: `t_order_reports.fax_status`。0=FAX対象外, 1=待機, 2=処理中, 3=完了, 9=エラー（旧経路）。
-- **OutputType**: 発注の出力区分。FAX対象判定（値 2 または 3）に使用される。
+- **OutputType**: 発注の出力区分。MaterialModule 側の送信パラメータであり、`t_print_queue` には保持されない（キューには印刷対象のみが投入されるため区分を持ち込まない）。値と意味は次のとおり。0=PDF を生成・保存するのみで印刷キュー（`t_print_queue`）・FAXキュー（`t_smtp_queue`）のいずれにも投入しない（保存のみ）／1=PDF生成・保存後に印刷キュー（`t_print_queue`）へ投入／2=PDF生成・保存後に FAXキュー（`t_smtp_queue`）へ投入（既存FAX経路）／3=PDF生成・保存後に印刷＋FAX の両キューへ投入。したがって印刷キューへの投入は OutputType ∈ {1, 3}、FAXキューへの投入は OutputType ∈ {2, 3}、OutputType=0 はどちらにも投入せず PDF 保存のみとなる。
 - **pdf_path**: `t_print_queue` の列。投入側（MaterialModule）が生成・保存した印刷対象 PDF のフルパス。必須（NOT NULL）であり、PrintAgent の唯一の印刷ソースである（旧 PrintPayload（印刷用 JSON）は `print-platform` の契約改訂で廃止）。
 - **印刷出力パスマスタ**: 印刷出力（PDF）の保存先ベースパスを保持する DB 管理のマスタ（設定／マスタテーブル）。コード変更なしに保存先を変更可能とする（現行値 `\\ojiadm23120073\app_share\PrintAgent`、将来のクラウド移行時はマスタ値の変更で対応）。Web 側（書込）と PrintAgent（読取）の双方から到達可能なパスを保持する。テーブル・DB 配置は設計フェーズで決定する。
 - **MaterialDbContext**: db_material_dev に接続する資材モジュールの DbContext。
@@ -104,13 +104,15 @@
 #### Acceptance Criteria
 
 1. THE PrintJobService SHALL 印刷ジョブを `t_print_queue`（db_common_dev）に投入する。
-2. THE PrintJobService SHALL 印刷ジョブ投入時に、生成・保存した印刷対象 PDF のフルパスを `pdf_path`（必須・非空）として付与する。
-3. THE PrintJobService SHALL 投入する印刷ジョブの PrintStatus を 1（待機）に設定する。
-4. THE PrintJobService SHALL 印刷ジョブを `t_order_reports` に新規生成しない。
-5. THE PrintJobService の投入 SHALL `print-platform` Requirement 4 で定義される投入インターフェース契約（投入先・PrintStatus 初期値・`pdf_path` 付与（必須）、`print_payload` は用いない）に準拠する。
-6. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス（IPrintQueueService 等）経由か直接アクセスか）SHALL 本 spec の設計フェーズで決定される。
-7. THE PrintJobService の投入先切替 SHALL `print-platform` Requirement 11 のカットオーバー手順に従って実施される。
-8. THE MainWeb SHALL 本変更により改変されない。
+2. THE PrintJobService SHALL 印刷キュー（`t_print_queue`）への投入を OutputType ∈ {1, 3}（印刷対象）のグループに限定する（OutputType=0 および 2 は印刷キューへ投入しない）。
+3. THE PrintJobService SHALL `t_print_queue` への投入時に OutputType を渡さない（`print-platform` の投入契約（`IPrintQueueService.EnqueueAsync`）から OutputType 引数は削除されており、印刷対象か否かの判定は投入側が行い、キューには印刷対象のみが投入される）。
+4. THE PrintJobService SHALL 印刷ジョブ投入時に、生成・保存した印刷対象 PDF のフルパスを `pdf_path`（必須・非空）として付与する。
+5. THE PrintJobService SHALL 投入する印刷ジョブの PrintStatus を 1（待機）に設定する。
+6. THE PrintJobService SHALL 印刷ジョブを `t_order_reports` に新規生成しない。
+7. THE PrintJobService の投入 SHALL `print-platform` Requirement 4 で定義される投入インターフェース契約（投入先・PrintStatus 初期値・`pdf_path` 付与（必須）、`print_payload` は用いない）に準拠する。
+8. WHERE PrintJobService（MaterialModule）から共通キュー `t_print_queue` へ投入する手段が必要となる、THE 投入経路の実装形態（CommonModule の投入サービス（IPrintQueueService 等）経由か直接アクセスか）SHALL 本 spec の設計フェーズで決定される。
+9. THE PrintJobService の投入先切替 SHALL `print-platform` Requirement 11 のカットオーバー手順に従って実施される。
+10. THE MainWeb SHALL 本変更により改変されない。
 
 ### Requirement 5: 旧 Material_PrintMonitor の廃止と導線更新
 
@@ -151,10 +153,11 @@
 #### Acceptance Criteria
 
 1. THE MaterialModule SHALL 承認済み発注グループ単位で対象帳票の印刷イメージ（PDF）を生成する。
-2. THE MaterialModule SHALL 生成対象帳票として発注書兼納入依頼書・工場入れ請求・入庫伝票 の3種を含める。
-3. THE MaterialModule SHALL 生成した PDF を保存し、その保存先フルパスを `pdf_path` として `t_print_queue` へ投入する。
-4. THE MaterialModule SHALL 帳票レイアウト（従来 PrintAgent の Documents 相当の QuestPDF レイアウト）の生成を本 spec の責務として所有する。
-5. WHERE PrintAgent が `t_print_queue` の印刷ジョブを処理する、THE PrintAgent SHALL `pdf_path` の生成済み PDF をサイレント印刷し、PDF 生成を行わない（印刷専用、`print-platform` Requirement 5 所有）。
+2. THE MaterialModule SHALL 承認済み発注グループの PDF 生成・保存を OutputType によらず（0 を含め）行い、印刷キュー（`t_print_queue`）／FAXキュー（`t_smtp_queue`）への投入のみを OutputType（印刷=1/3・FAX=2/3）で判定する（PDF は常に保存され、キューへの投入は条件付きである）。
+3. THE MaterialModule SHALL 生成対象帳票として発注書兼納入依頼書・工場入れ請求・入庫伝票 の3種を含める。
+4. THE MaterialModule SHALL 生成・保存した PDF の保存先フルパスを、印刷キューへ投入する場合に `pdf_path` として `t_print_queue` へ付与する。
+5. THE MaterialModule SHALL 帳票レイアウト（従来 PrintAgent の Documents 相当の QuestPDF レイアウト）の生成を本 spec の責務として所有する。
+6. WHERE PrintAgent が `t_print_queue` の印刷ジョブを処理する、THE PrintAgent SHALL `pdf_path` の生成済み PDF をサイレント印刷し、PDF 生成を行わない（印刷専用、`print-platform` Requirement 5 所有）。
 
 ### Requirement 9: PDF保存先パスのマスタ管理
 

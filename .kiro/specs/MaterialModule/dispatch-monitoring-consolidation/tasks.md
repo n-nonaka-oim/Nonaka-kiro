@@ -6,6 +6,8 @@
 
 各タスクは前タスクの成果物の上に積み上がる（entity/DDL → パス解決サービス → PrintJobService 改修 → 旧画面削除/導線 → テスト → カットオーバー協調）。実装言語は C#（.NET 8 / Razor Pages）。テスト基盤は `MaterialModule.Tests`（xUnit + FsCheck.Xunit）。
 
+なお、既存タスク 3.2 で実装済みの `PrintJobService` 投入処理は、`print-platform` の投入契約改定（`IPrintQueueService.EnqueueAsync` から `outputType` 引数を削除・キューへ出力区分を持ち込まない）と投入側ゲート化（印刷キュー投入を `OutputType ∈ {1,3}` に限定・`0`/`2` は投入しない・`2` は FAX 経路が PDF 生成を担うため二重生成回避）に追随するため、新規タスク群 10 で是正する（既存タスク 3.2 の成果物は保持し、差分のみを 10 で補正）。
+
 ### 制約（全タスク共通・厳守）
 
 - **MaterialModule 配下のみ変更**（＋既存 `CommonModule` の `ProjectReference` 利用）。MainWeb・AuthModule・SharedCore・SharedInfrastructure・PrintAgent のソース／設定は変更しない（_Requirements: 4.8, 7.1, 7.2_）。
@@ -121,6 +123,26 @@
     - 実行手順詳細・DDL・移行は `print-platform` 所有（ユーザー実施）。本タスクはドキュメント整合のみ（コード変更なし）
     - _Requirements: 4.7_
 
+- [ ] 10. 新Print仕様追随（OutputType 投入側ゲート・EnqueueAsync outputType 除去・二重生成回避）
+  - [ ] 10.1 `PrintJobService.CreateOrderApprovalJobsAsync` を OutputType ゲートに是正
+    - 印刷キュー投入を代表 `OutputType ∈ {1,3}` のグループに限定する（`OutputType = 0`・`2` は印刷キューへ投入しない）。既存実装（3.2）は全グループを投入していたため、投入側ゲート判定を追加して是正する
+    - `IPrintQueueService.EnqueueAsync` 呼び出しから `outputType` 引数を削除し、`print-platform` の改定シグネチャ `EnqueueAsync(module, reportType, referenceCode, pdfPath, printerName, copies, ct)` に一致させる（キューへ出力区分を持ち込まない）
+    - PDF 生成・保存は `OutputType ∈ {0,1,3}` のグループで行い、`OutputType = 2`（FAXのみ）は FAX 経路（`DispatchEnqueueService`）が生成・保存・投入を担うため PrintJobService は PDF 生成も印刷投入も行わない（二重生成回避）
+    - `IPrintJobService` の公開シグネチャは維持（呼び出し元 `ApprovalService` を変更しない）
+    - _Requirements: 4.2, 4.3, 8.2_
+
+  - [ ] 10.2 二重生成回避の整合確認（PrintJobService と DispatchEnqueueService の PDF 生成・保存責務分担）
+    - `OutputType = 3`（両方）のグループで同一グループ PDF が二重生成・二重保存されないよう、両経路（`PrintJobService`／`DispatchEnqueueService`）の生成条件を突き合わせて整合させる（保存の一元化＝印刷経路が保存し FAX 経路は保存済み PDF を参照）
+    - design「二重生成の回避（PDF生成責務の分担）」の不変条件（いかなるグループの PDF も二重生成されない）に一致させる
+    - _Requirements: 8.2_
+
+  - [ ]* 10.3 Property 2 プロパティテストを OutputType ゲートに追随更新
+    - **Property 2: 印刷対象グループのみ契約準拠の投入が1回行われる（OutputType ゲート）**
+    - **Validates: Requirements 4.2, 4.5, 8.1**
+    - 代表 `OutputType ∈ {1,3}` のグループのみ `IPrintQueueService.EnqueueAsync` をちょうど1回・`{0,2}` は 0 回であることを検証。呼び出し引数に `outputType` を含まない（`module`/`reportType`/`referenceCode`/`pdfPath`/`copies` を検証）
+    - タグ: `Feature: dispatch-monitoring-consolidation, Property 2`・最低 100 回反復
+    - _Requirements: 4.2, 4.5, 8.1_
+
 ## Notes
 
 - `*` 付きサブタスク（テスト）は任意で、MVP を急ぐ場合はスキップ可能。ただし本 spec は Correctness Properties（Property 1〜3）の検証を推奨する。
@@ -129,6 +151,7 @@
 - Property テストは `MaterialModule.Tests`（xUnit + FsCheck.Xunit）で各100回以上反復。`IPrintQueueService` の投入時挙動（`print_status=1` 初期化・必須空白 `ArgumentException`）自体は `print-platform` が検証済みで、本 spec は「契約を満たす引数で必ず経由する」ことを検証する。
 - DDL 適用・ビルド・テスト実行・実送信・実印刷・`m_content` SQL 実行はいずれもユーザー側で実施する。
 - 本 spec 由来の変更は MainWeb・AuthModule・SharedCore・PrintAgent に差分を出さない（毎セッション確認）。
+- タスク群 10 は、投入側 OutputType ゲート化（印刷キュー投入を `OutputType ∈ {1,3}` に限定）と `EnqueueAsync` からの `outputType` 引数除去への追随（新Print仕様）である。既存タスク 3.2 は投入契約改定前に実装・コミット済み（全グループ投入・`outputType` 受け渡し）であり、タスク群 10 がこれを是正する。既存の完了タスク（`[x]`）は変更しない。
 
 ## Task Dependency Graph
 
@@ -141,7 +164,10 @@
     { "id": 3, "tasks": ["3.2"] },
     { "id": 4, "tasks": ["5.1", "5.2", "6.1"] },
     { "id": 5, "tasks": ["7.1", "7.2", "7.3", "7.4", "7.5"] },
-    { "id": 6, "tasks": ["9.1"] }
+    { "id": 6, "tasks": ["9.1"] },
+    { "id": 7, "tasks": ["10.1"] },
+    { "id": 8, "tasks": ["10.2"] },
+    { "id": 9, "tasks": ["10.3"] }
   ]
 }
 ```
