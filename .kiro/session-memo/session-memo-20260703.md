@@ -194,3 +194,36 @@
 - 10.3*（Property2 追随テスト・任意）。
 - print-platform 任意PBT 12.14-12.16・CP 8/10。
 - SmtpAgent FAXテスト送信（未実装案件 I-3）。
+
+---
+
+## DB 重複テーブル整理＋旧・孤立テーブル DROP（案件 J-1 完了）
+
+### 経緯
+- 「db_material_dev と db_common_dev に同名テーブルが併存して混乱」との指摘を受け整理。
+- 調査: 現行コードは全て db_common_dev（新）側を参照。旧 db_material_dev コピーは孤立。
+  - SmtpAgent 接続先＝**db_common_dev**（`SmtpAgent/appsettings.json` CloudDb で確認）。
+  - PrintAgent 接続先＝**db_common_dev**（稼働確認済）。
+  - MaterialModule に旧テーブルの DbSet/ToTable 参照なし（grep 0件）。Material_SmtpMonitor/PrintMonitor ページも既に存在せず。
+- 孤立3テーブル（db_material_dev の `m_smtp_config`／`m_smtp_agent_control`／`m_print_agent_control`）は安全に DROP 可能と判断。
+
+### 実施
+1. **DROP スクリプト作成**: `MaterialModule/docs/sql/drop_legacy_orphan_tables_db_material_dev.sql`（存在ガード付き・3テーブル DROP・t_order_reports は対象外・実行はユーザー）。コミット MaterialModule `78a8c26`。
+2. **ユーザーが db_material_dev で DROP 実施済み**（3テーブル削除）。
+3. **ドキュメント整合（DROP後の状態に一致）**:
+   - `.kiro/docs/db/テーブル定義書.md`: マスタ一覧 23→**20**（旧3行削除）・旧3テーブルの詳細節を削除・db_common_dev 節の注記2箇所を「DROP済み」に更新・「重複テーブルの整理」節を DROP実施済に更新（退役状況）。
+   - `.kiro/docs/db/ER図.md`: 資材マスタ分類 23→**20**（旧3行削除・DROP済み注記追加）。db_common_dev 節（新テーブル）は現存として維持。
+   - `.kiro/docs/未実装案件一覧.md`: 案件 J（DB重複テーブル退役）追加。J-1 は最終確認済＋DROP実施済で完了、J-2（t_order_reports・保全後）は継続。
+- 診断クリア（テーブル定義書・ER図）。
+
+### 現存整理（DROP後）
+- **同名テーブルは db_common_dev（共通基盤）側のみ**: `t_smtp_queue`/`m_smtp_config`(複数行)/`m_smtp_agent_control`/`t_print_queue`/`m_print_agent_control`/`m_printer`。
+- db_material_dev 現行: 資材業務テーブル一式＋`m_print_output_path`＋`t_order_dispatch_log`＋`t_order_reports`（履歴保全・案件 J-2）。
+
+### 残（次回）
+- J-2: `t_order_reports` 退役（保全期間後・ユーザー判断）。
+- 任意PBT: print-platform 12.14-12.16 / dispatch 10.3。CP 8/10。
+- SmtpAgent FAXテスト送信（I-3・発注書テスト段階）。
+
+### コミット
+- MaterialModule `78a8c26`（DROP SQL）。Nonaka: `6fa7241`（整理記録初版）・`190df9d`（J-1確認反映）・本コミット（DROP後ドキュメント整合・memo）。

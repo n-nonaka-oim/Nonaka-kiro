@@ -169,7 +169,7 @@ erDiagram
 
 ## テーブル分類
 
-### マスタ（23テーブル）
+### マスタ（20テーブル）
 
 | テーブル名 | 日本語名 | 主用途 |
 |-----------|----------|--------|
@@ -192,10 +192,9 @@ erDiagram
 | m_company_info | 自社情報マスタ | 帳票ヘッダ |
 | m_report_notes | 帳票備考マスタ | 帳票フッター |
 | m_user_preferences | ユーザー設定 | 画面設定保存 |
-| m_print_agent_control | PrintAgent死活監視 | Worker生存状態(heartbeat)表示（独立・リレーションなし） |
-| m_smtp_config | SMTP/FAX送信設定 | メールtoFAX送信の接続設定（独立・リレーションなし） |
-| m_smtp_agent_control | SmtpAgent死活監視 | FAX送信Worker生存状態(heartbeat)表示（独立・リレーションなし） |
 | m_print_output_path | 印刷出力パスマスタ | 印刷出力(PDF)保存先ベースパス保持（独立・リレーションなし） |
+
+> 注: 旧 db_material_dev の `m_print_agent_control`／`m_smtp_config`／`m_smtp_agent_control`（共通基盤移行に伴う孤立コピー）は 2026/07/03 に DROP 済み。現行の同名テーブルは db_common_dev（共通基盤）側のみ（下記「共通DB」節）。
 
 ### トランザクション（10テーブル）
 
