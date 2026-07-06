@@ -467,3 +467,47 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**SmtpAgent.Tests の Property 5/6 を新3モードに追随（15.3/15.4）**、その後 docs 15.6・dispatch 11.5。
+
+---
+
+## 🔴 クローズ・チェックポイント（FAX新仕様 実装ほぼ完了・区切り）
+
+### 現在地（FAX送信 config_key 3モード化＝実装・テスト移行・docs 完了）
+- **smtp-sender タスク群15**: 15.1〜15.7 完了（残＝16 チェックポイント＝ユーザーのビルド/テスト）。
+- **dispatch タスク群11**: 11.1〜11.4 完了（残＝11.5 任意PBT Property4・11.6 チェックポイント）。
+- 全コード変更・spec・docs コミット済み。ユーザー：slnCoCore ビルドOK（テスト実行は後日）。
+
+### 本セッション完了サマリ（FAX新仕様）
+1. **要件確定**（ユーザー）: config_key を fax_domain の形で3モード判別（mail=空/fax=@始まりドメイン/test-fax=完全アドレス）。旧 Material/test 廃止。テスト送信は承認画面チェックでジョブ単位（永続共有しない＝競合回避）。faxモードで@混入はエラー。
+2. **spec**: smtp-sender（req/design/tasks・群15）＋ dispatch（req R10/design Comp7・Prop4/tasks 群11）を整合。
+3. **実装**:
+   - SmtpAgent `ResolveToAddress` 3分岐（mail=@必須/fax=@混入エラー・0→81・付与/test-fax=宛先無視で固定宛先）＋IF コメント。コミット `7435a26`。
+   - CommonModule `update_m_smtp_config_modes.sql`（mail/fax/test-fax UPSERT＋旧Material/test DELETE）・ISmtpQueueService コメント掃討。コミット `dbfe065`。
+   - MaterialModule `FaxDispatchOptions`（TestSendEnabled/TestFaxNumber/ConfigKey 廃止→NormalConfigKey/TestConfigKey）・`DispatchEnqueueService`（testSend・config_key選定・宛先上書き廃止）・`ApprovalService`/`IApprovalService`（faxTestSend）・承認画面 Approvals チェックボックス。コミット `7bb1220`。
+4. **テスト移行**（⚠ MaterialModule.Tests / SmtpAgent.Tests は**git管理外**＝ディスク上のみ・診断クリア）:
+   - MaterialModule.Tests: Harness/UnitTests/AlgorithmProperty（Property9書換）/PropertyTests（Property8削除）/ConfigBinding削除/FaxDispatchOptionsBinding書換/ApprovalServiceIntegration（Moq 3引数）。
+   - SmtpAgent.Tests: ResolveToAddressPropertyTests 全面書換（3モード＋エラー）・SmtpSendServiceGenerators に FullAddressFaxDomainGen 追加・MultipleToResolutionPropertyTests 生成器をモード整合化。
+5. **docs**: テーブル定義書 m_smtp_config（3モード・config_key mail/fax/test-fax）・t_order_dispatch_log 備考。コミット `b96ca62`。押印枠1.5倍 `94064e2`。
+
+### コミット一覧（本セッション）
+- MaterialModule: `94064e2`(押印枠1.5倍) / `7bb1220`(FAX config_key選定・承認画面)
+- SmtpAgent: `7435a26`(ResolveToAddress 3モード)
+- CommonModule: `dbfe065`(m_smtp_config スクリプト・コメント)
+- Nonaka(.kiro): `a88f12f`(smtp spec) / `b77e0f3`(dispatch spec) / `571c70b`・`61f45e9`(memo) / `f31e1b1`・`64cfac4`(tasks) / `b96ca62`(docs+tasks)
+- ※各リポジトリ未push分あり（push はユーザー判断）。テスト .cs は git 管理外。
+
+### 🟡 次アクション（新セッションで最優先）
+1. **ユーザー実行（DB/デプロイ/実機）**:
+   - `CommonModule/docs/sql/update_m_smtp_config_modes.sql` を db_common_dev で実行。**順序注意**＝投入側（MaterialModule）が fax/test-fax を使うビルドをデプロイしてから旧 `Material`/`test` を DELETE（Material 参照ジョブが残る間は消さない）。
+   - slnCoCore（済OK）／SmtpAgent.sln 再ビルド＆テスト実行。SmtpAgent 再デプロイ。
+   - 実FAX確認: 承認画面「FAXテスト送信」ON→config_key=test-fax→固定宛先 `0064871033@faxmail.com` に着信／OFF→config_key=fax→実FAX番号（0→81＋@faxmail.com）に送信。
+2. **任意PBT（未・後回し可）**: dispatch 11.5（Property4＝config_key 選定・宛先非上書き・MaterialModule.Tests）。
+3. 旧テーブル J-2（t_order_reports 保全後DROP）・print-platform 任意PBT 12.14-12.16。
+
+### 運用メモ（重要・再掲）
+- テスト .cs（MaterialModule.Tests / SmtpAgent.Tests）は git 管理外。ディスク上は新仕様に移行済み・診断クリア。バージョン管理はユーザー運用。
+- SmtpAgent.Tests の既存テストのうち **ResolveToAddress 旧挙動前提だったもの（ResolveToAddress/MultipleTo）は新3モードに追随済み**。他（SendSuccess/Heartbeat 等・mail モード＋@宛先）は不変で整合。
+- test-fax の fax_domain は「ドメイン」ではなく**完全アドレス**（`0064871033@faxmail.com`）＝Agent が宛先を無視してこの値へ送る設計。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**ユーザーの DB スクリプト実行・SmtpAgent デプロイ・実FAX(fax/test-fax)確認**、その後 任意PBT dispatch 11.5。
