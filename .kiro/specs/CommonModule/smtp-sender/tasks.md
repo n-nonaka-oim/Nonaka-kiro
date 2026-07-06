@@ -327,11 +327,11 @@
     - `CommonModule/Services/ISmtpQueueService.cs` の XMLコメント config_key 例を `mail`/`fax`/`test-fax` に更新（`Material`/`test` を除去）
     - _Requirements: 2.7_
 
-  - [ ] 15.6 テーブル定義書の m_smtp_config 記述を更新
+  - [x] 15.6 テーブル定義書の m_smtp_config 記述を更新
     - `.kiro/docs/db/テーブル定義書.md` の m_smtp_config について、`config_key` の運用値（`mail`/`fax`/`test-fax`）・`fax_domain` の形による送信モード（空=メール直送 / `@`始まりドメイン=FAX送信 / 完全アドレス=固定宛先）を反映
     - _Requirements: 2.4, 2.5, 2.6, 2.7_
 
-  - [ ] 15.7 Spec 単一正本の確認
+  - [x] 15.7 Spec 単一正本の確認
     - 本 spec は `.kiro/specs/CommonModule/smtp-sender/` を単一正本とする（現行ルール）。旧 `MaterialModule/Doc/specs/` へのコピーは作成しない
     - _Requirements: （プロジェクトルール: Spec 単一正本）_
 
