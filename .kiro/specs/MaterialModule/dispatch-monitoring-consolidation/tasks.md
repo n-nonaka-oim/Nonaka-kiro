@@ -143,6 +143,40 @@
     - タグ: `Feature: dispatch-monitoring-consolidation, Property 2`・最低 100 回反復
     - _Requirements: 4.2, 4.5, 8.1_
 
+- [ ] 11. FAX送信の config_key 選定と承認画面テスト送信（R10）
+  - [ ] 11.1 `FaxDispatchOptions` を改修（config_key 選定・テスト設定廃止）
+    - `MaterialModule/Configuration/FaxDispatchOptions.cs` から `TestSendEnabled`・`TestFaxNumber`・`ConfigKey`（`"Material"` 固定）を削除
+    - `NormalConfigKey`（既定 `"fax"`）・`TestConfigKey`（既定 `"test-fax"`）を追加。`FromAddress` は継続保持
+    - _Requirements: 10.1, 10.5_
+
+  - [ ] 11.2 `IDispatchEnqueueService`/`DispatchEnqueueService` に testSend を追加し config_key を選定
+    - `EnqueueOrderApprovalFaxAsync` に `bool testSend` 引数を追加（`EnqueueOrderApprovalFaxAsync(List<TOrder> orders, bool testSend, CancellationToken ct = default)`）
+    - config_key = `testSend ? _options.TestConfigKey : _options.NormalConfigKey` を `ISmtpQueueService.EnqueueAsync` の `configKey` へ渡す（従来の固定 `_options.ConfigKey` を廃止）
+    - `ResolveRecipientForSend`（`TestSendEnabled` 時に `TestFaxNumber` へ上書き）を削除し、宛先は `ResolveFaxRecipient` の実FAX番号をそのまま渡す（test-fax は SmtpAgent が宛先を無視するため）
+    - `t_order_dispatch_log.IsTestSend` に `testSend`、`ConfigKey` に選定値を記録
+    - _Requirements: 10.1, 10.3, 10.4, 10.6_
+
+  - [ ] 11.3 `IApprovalService`/`ApprovalService` に faxTestSend を追加し受け渡し
+    - `ApproveOrdersAsync`/`ApproveOrderAsync` に `bool faxTestSend = false` を追加し、`_dispatchEnqueueService.EnqueueOrderApprovalFaxAsync(orders, faxTestSend, ct)` へ渡す
+    - 印刷投入（`PrintJobService`）はテスト送信の影響を受けない（既存呼び出しのまま）
+    - _Requirements: 10.2, 10.3, 10.4_
+
+  - [ ] 11.4 承認画面（Approvals）に「FAXテスト送信」チェックボックスを追加
+    - `MaterialModule/Areas/Material/Pages/Approvals/Index.cshtml(.cs)` の承認操作近傍にチェックボックスを配置（既定 OFF）。`_MaterialStyles`・`material-page` 規約準拠
+    - 承認 POST ハンドラでチェック値をバインドし `ApprovalService` の承認メソッドへ `faxTestSend` として渡す。永続化・全体共有しない（当該 POST でのみ有効）
+    - このフラグは Common_SmtpMonitor には設けない
+    - _Requirements: 10.2, 10.5, 10.7_
+
+  - [ ]* 11.5 Property 4 プロパティテスト（config_key 選定・宛先非上書き）
+    - **Property 4: FAX投入の config_key はテスト送信指定に一致し宛先は上書きされない**
+    - **Validates: Requirements 10.1, 10.3, 10.4, 10.6**
+    - `testSend`（true/false）＋FAX対象を含む発注集合を生成し、`ISmtpQueueService.EnqueueAsync` の `configKey` が `test-fax`/`fax` に一致・宛先が実FAX番号のまま（上書きなし）を検証。`ISmtpQueueService` はモック。タグ: `Feature: dispatch-monitoring-consolidation, Property 4`・最低 100 回反復
+    - _Requirements: 10.1, 10.3, 10.4, 10.6_
+
+  - [ ] 11.6 チェックポイント - FAX config_key 選定・承認画面テスト送信のビルド/テストを通す
+    - ビルド／テスト実行はユーザー側。承認画面チェック→config_key 選定→投入の一連が整合していることを確認する。
+    - ※ SmtpAgent 側の宛先解決3モード（`fax`/`test-fax` の実挙動）は別 spec `smtp-sender` タスク15 が担う。
+
 ## Notes
 
 - `*` 付きサブタスク（テスト）は任意で、MVP を急ぐ場合はスキップ可能。ただし本 spec は Correctness Properties（Property 1〜3）の検証を推奨する。
@@ -152,6 +186,7 @@
 - DDL 適用・ビルド・テスト実行・実送信・実印刷・`m_content` SQL 実行はいずれもユーザー側で実施する。
 - 本 spec 由来の変更は MainWeb・AuthModule・SharedCore・PrintAgent に差分を出さない（毎セッション確認）。
 - タスク群 10 は、投入側 OutputType ゲート化（印刷キュー投入を `OutputType ∈ {1,3}` に限定）と `EnqueueAsync` からの `outputType` 引数除去への追随（新Print仕様）である。既存タスク 3.2 は投入契約改定前に実装・コミット済み（全グループ投入・`outputType` 受け渡し）であり、タスク群 10 がこれを是正する。既存の完了タスク（`[x]`）は変更しない。
+- タスク群 11 は FAX送信の config_key 選定（本番 `fax`／テスト `test-fax`・旧 `Material` 廃止）と承認画面「FAXテスト送信」チェック（ジョブ単位・非共有・競合回避）への対応（R10）。`FaxDispatchOptions` の `TestSendEnabled`/`TestFaxNumber`/`ConfigKey` を廃止し、`DispatchEnqueueService`/`ApprovalService` に testSend/faxTestSend を通す。SmtpAgent の宛先解決3モードの実挙動は別 spec `smtp-sender` タスク15 が所有する。`IDispatchEnqueueService`/`IApprovalService` の内部シグネチャ変更を伴う（MaterialModule 内で完結）。
 
 ## Task Dependency Graph
 
@@ -167,7 +202,11 @@
     { "id": 6, "tasks": ["9.1"] },
     { "id": 7, "tasks": ["10.1"] },
     { "id": 8, "tasks": ["10.2"] },
-    { "id": 9, "tasks": ["10.3"] }
+    { "id": 9, "tasks": ["10.3"] },
+    { "id": 10, "tasks": ["11.1"] },
+    { "id": 11, "tasks": ["11.2", "11.4"] },
+    { "id": 12, "tasks": ["11.3"] },
+    { "id": 13, "tasks": ["11.5", "11.6"] }
   ]
 }
 ```

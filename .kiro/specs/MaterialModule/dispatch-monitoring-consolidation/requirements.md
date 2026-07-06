@@ -12,6 +12,8 @@
 4. **PDF生成責務の移管（PrintAgent → MaterialModule）**: 従来 PrintAgent が担っていた帳票（発注書兼納入依頼書・工場入れ請求・入庫伝票 の3種）の QuestPDF レイアウト生成を送信側（MaterialModule）へ移管する。PrintAgent は印刷専用（`pdf_path` の生成済み PDF をサイレント印刷）となり、印刷イメージ（PDF）の生成は MaterialModule の責務とする。
 5. **旧 Material_PrintMonitor の廃止／導線更新**: Material 側の印刷監視画面（Material_PrintMonitor）を廃止し、導線を共通プリント基盤が設置する Common_PrintMonitor へ更新する。
 
+6. **FAX送信の接続プロファイル選定とテスト送信指定**: FAXジョブ投入時の config_key を本番 `fax`／テスト `test-fax` から選定する（旧 `Material` 廃止）。テスト送信の要否は承認画面（Approvals）の「FAXテスト送信」チェックボックスで**承認操作ごと（ジョブ単位）**に指定し、永続的・全体共有の状態を持たない（多人数同時運用での取り違え回避）。宛先解決・固定宛先モードの振る舞いは別 spec `smtp-sender` が所有する。
+
 本 spec は **要件定義のみ** を対象とし、実装・コード変更は含まない。
 
 ### 依存関係（Dependencies）
@@ -46,6 +48,8 @@
 - **Common_SmtpMonitor**: `CommonModule/Areas/Common/Pages/SmtpMonitor`（`/Common/SmtpMonitor`）。`t_smtp_queue` ベースの新SMTP監視画面（FAX監視の集約先）。
 - **Material_PrintMonitor**: `MaterialModule/Areas/Material/Pages/PrintMonitor`。`t_order_reports.print_status` を表示する従来の印刷監視画面（本 spec の廃止対象）。
 - **Common_PrintMonitor**: `CommonModule/Areas/Common/Pages/PrintMonitor`（`/Common/PrintMonitor`）。共通プリント基盤の印刷監視画面。設置・実装は `print-platform` が所有する。本 spec は導線の更新先として参照する。
+- **config_key（接続プロファイルキー）**: FAX/メール送信ジョブが使用する `m_smtp_config` の接続プロファイルキー。本 spec の FAX 投入では本番 `fax`（fax_domain=`@faxmail.com`・FAX送信モード）／テスト `test-fax`（fax_domain=完全アドレス・固定宛先モード）を選定する。旧 `Material`・`test` は廃止（`smtp-sender` 所有）。
+- **FAXテスト送信指定**: 承認画面（Approvals）の「FAXテスト送信」チェックボックスによる、当該承認操作で投入するFAXジョブを `config_key=test-fax`（固定のテスト宛先へ送信）とするか否かの選択。永続的・全体共有の状態としては保持せず、承認操作ごとに投入する各ジョブに対してのみ適用する（多人数同時運用での競合回避）。
 - **SmtpAgent**: `t_smtp_queue` のみを処理する Worker Service。リファクタ済みで `t_order_reports.fax_status` は処理しない。
 - **PrintAgent**: 印刷ジョブを処理する Worker Service（別ソリューション: `\\OJIADM23120073\Labs\WindowsService\PrintAgent`）。読取先変更は `print-platform` が所有する。本 spec では参照のみ。
 - **PrintStatus**: 印刷状態（`print-platform` の `t_print_queue` が保持する値）。1=待機, 2=処理中, 3=完了, 9=エラー。0=対象外 は廃止（投入側ゲート化により、印刷キューには印刷対象のみを投入するため「対象外」状態を持たない）。
@@ -170,3 +174,18 @@
 3. THE 印刷出力パスマスタ SHALL 現行の保存先ベースパス値として `\\ojiadm23120073\app_share\PrintAgent` を保持する。
 4. THE 印刷出力パスマスタが保持する保存先 SHALL Web 側（書込）と PrintAgent（読取）の双方から到達可能なパスである。
 5. THE 印刷出力パスマスタのテーブル定義・DB 配置 SHALL 本 spec の設計フェーズで決定される。
+
+### Requirement 10: FAX送信の接続プロファイル選定と承認画面でのテスト送信指定
+
+**User Story:** 発注業務担当者として、発注承認時にFAX送信を本番宛先へ送るか固定のテスト宛先へ送るかを承認画面で選べるようにしたい。そうすれば実運用に影響を与えずにFAX送信を検証でき、かつ多人数が同時に操作しても取り違え（本番宛先への誤送信・テスト指定の相互干渉）が起きない。
+
+#### Acceptance Criteria
+
+1. WHEN MaterialModule がFAXジョブを `t_smtp_queue` へ投入する、THE MaterialModule SHALL 接続プロファイルキー（config_key）に、本番送信では `fax`、テスト送信では `test-fax` を指定する（旧 `Material` は使用しない）。
+2. THE 承認画面（Approvals）SHALL 「FAXテスト送信」チェックボックスを提供し、承認操作ごとにテスト送信の要否を指定できる。
+3. WHERE 承認操作で「FAXテスト送信」が指定される、THE MaterialModule SHALL 当該承認で投入する全FAXジョブの config_key を `test-fax` とする。
+4. WHERE 承認操作で「FAXテスト送信」が指定されない、THE MaterialModule SHALL 当該承認で投入する全FAXジョブの config_key を `fax` とする。
+5. THE MaterialModule SHALL テスト送信の指定を永続的・全体共有の状態（グローバルなトグル・DB永続の共有フラグ等）として保持せず、承認操作ごとに投入する各FAXジョブに対してのみ適用する。
+6. WHERE config_key が `test-fax`（固定宛先モード）である、THE MaterialModule SHALL 宛先（recipient）に実FAX番号を渡してよく、テスト用宛先の上書きを MaterialModule 側で行わない（SmtpAgent が固定宛先モードで宛先を無視して固定のテスト宛先へ送信するため）。
+7. THE MaterialModule SHALL FAXテスト送信の可否指定を共通監視画面（Common_SmtpMonitor 等）に設けず、承認画面（Approvals）でのみ指定する。
+8. THE FAX宛先解決・固定宛先モードの振る舞い（config_key＝`fax`/`test-fax`／宛先形式検証／固定宛先送信）SHALL 別 spec `smtp-sender`（Requirement 6・8）が所有し、本 spec は投入側の config_key 選定と承認画面での指定を所有する。

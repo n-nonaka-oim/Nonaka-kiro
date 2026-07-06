@@ -10,6 +10,8 @@
 4. **PDF保存先パスのマスタ管理（R9）**: 印刷出力（PDF）の保存先ベースパスを db_material_dev の DB マスタで管理し、コード変更なしに変更可能とする。
 5. **旧監視画面の廃止・導線更新（R2/R3/R5）**: Material_SmtpMonitor（旧FAX監視）と Material_PrintMonitor（旧印刷監視）を廃止し、導線を CommonModule の `/Common/SmtpMonitor`・`/Common/PrintMonitor` へ更新する。
 
+6. **FAX送信の config_key 選定と承認画面テスト送信（R10）**: FAXジョブ投入時の config_key を本番 `fax`／テスト `test-fax` から選定する（旧 `Material` 廃止）。テスト送信の要否は承認画面（Approvals）の「FAXテスト送信」チェックボックスで承認操作ごと（ジョブ単位）に指定し、`FaxDispatchOptions.TestSendEnabled`/`TestFaxNumber`（全体既定・宛先上書き）は廃止する。宛先解決・固定宛先モードの振る舞いは別 spec `smtp-sender`（R6/R8）が所有する。
+
 ### 依存関係（print-platform 契約）
 
 本 spec は共通プリント基盤 spec `print-platform`（CommonModule 所有）に **依存** する。契約の発生元は `print-platform` であり、本 spec は重複する受入基準を持たず、以下を **契約として参照** する。
@@ -188,6 +190,28 @@ public interface IPrintOutputPathService
   - `area='Material' AND page='PrintMonitor/Index'` の `m_content` 行と関連 `r_content_auth` を除去し、印刷監視の導線を Common_PrintMonitor（`/Common/PrintMonitor`）へ更新（R5.2）。
 - 本 spec は当該解除 SQL を `MaterialModule/docs/sql/`（`register_smtp_monitor_content.sql` と対の「解除 SQL」）に用意し、実行はユーザー側とする。MainWeb・AuthModule のソースは変更しない（R7.1）。`/Common/*` ページの `m_content` 登録は CommonModule 側 spec（print-platform / order-approval-fax-mail）が所有する。
 
+### 7. FAX送信の config_key 選定と承認画面テスト送信（R10）
+
+FAX投入（`DispatchEnqueueService` → `ISmtpQueueService` → `t_smtp_queue`）の config_key を、承認操作ごとに指定される「FAXテスト送信」フラグに基づき **本番 `fax` / テスト `test-fax`** から選定する。宛先解決・固定宛先モード（`test-fax` が宛先を無視して固定のテスト宛先へ送信）は `smtp-sender`（R6/R8）が所有し、本 spec は投入側の config_key 選定とフラグの受け渡しを所有する。
+
+- **`FaxDispatchOptions`（改修・MaterialModule/Configuration）**:
+  - 削除: `TestSendEnabled`（全体既定のテストトグル）・`TestFaxNumber`（宛先上書き用番号）・`ConfigKey`（`"Material"` 固定）。
+  - 追加: `NormalConfigKey`（既定 `"fax"`）・`TestConfigKey`（既定 `"test-fax"`）。テスト宛先値そのものは `m_smtp_config` の `test-fax` プロファイル（`smtp-sender` 所有）が保持するため、MaterialModule 側では持たない。
+  - `FromAddress` は継続保持。`PdfShareRoot` は既に印刷出力パスマスタ由来へ一元化済み（プロパティ残置可）。
+- **`IDispatchEnqueueService` / `DispatchEnqueueService`（改修）**:
+  - `EnqueueOrderApprovalFaxAsync(List<TOrder> orders, CancellationToken ct)` に **テスト送信フラグ** を追加し、`EnqueueOrderApprovalFaxAsync(List<TOrder> orders, bool testSend, CancellationToken ct = default)` とする。
+  - config_key = `testSend ? _options.TestConfigKey : _options.NormalConfigKey`。`ISmtpQueueService.EnqueueAsync` の `configKey` 引数へ渡す（従来の固定 `_options.ConfigKey` を廃止）。
+  - `ResolveRecipientForSend`（`TestSendEnabled` 時に `TestFaxNumber` へ上書き）を **廃止**し、宛先には解決済みの実FAX番号（`ResolveFaxRecipient` の結果）をそのまま渡す（`test-fax` では SmtpAgent が固定宛先モードで宛先を無視するため）。
+  - 送信ログ `t_order_dispatch_log.IsTestSend` は `testSend` の値、`ConfigKey` は選定した config_key を記録する。
+- **`IApprovalService` / `ApprovalService`（改修）**:
+  - `ApproveOrdersAsync` / `ApproveOrderAsync` に FAXテスト送信フラグ（例 `bool faxTestSend = false`）を追加し、`_dispatchEnqueueService.EnqueueOrderApprovalFaxAsync(orders, faxTestSend, ct)` へ受け渡す。印刷投入（`PrintJobService`）はテスト送信の影響を受けない（印刷キューは対象外）。
+- **承認画面（Approvals・`Areas/Material/Pages/Approvals/Index.cshtml(.cs)`）**:
+  - 承認操作の近傍に「FAXテスト送信」チェックボックスを配置（既定 OFF＝本番）。`_MaterialStyles`・`material-page` 規約に準拠。
+  - 承認 POST ハンドラでチェック値をバインドし、`ApprovalService` の承認メソッドへ `faxTestSend` として渡す。永続化・全体共有はせず、当該 POST（承認操作）でのみ有効（多人数同時運用での競合回避・R10.5）。
+  - このフラグは共通監視画面（Common_SmtpMonitor）には設けない（R10.7）。
+
+> config_key 選定はジョブ単位（承認操作単位）で完結し、DB 永続の共有フラグやアプリ全体状態を持たない（R10.5）。`test-fax` 選択時も MaterialModule は実FAX番号を宛先に渡し、宛先の上書きは行わない（R10.6）。
+
 ## Data Models
 
 ### 帳票の所有と再利用（R8）
@@ -297,6 +321,12 @@ public interface IPrintOutputPathService
 **Validates: Requirements 4.2, 8.3, 9.1, 9.2**
 
 > **検証方針の注記**: Property 1〜3 は純粋ロジック／フェイク差し替えで PBT（100 回以上反復）検証する。実 QuestPDF レンダリング結果（PDF の中身）・実ファイル I/O・実 DB・実印刷は INTEGRATION／EXAMPLE テストで扱う（「Testing Strategy」参照）。R8.2 の3帳票レイアウト所有は例示／構造テストで担保する（キュー投入対象は `order_approval` のみのため、Property 2 の `reportType` 固定で表現）。
+
+### Property 4: FAX投入の config_key はテスト送信指定に一致し宛先は上書きされない
+
+*任意の* 承認済み発注集合（FAX対象 `OutputType ∈ {2,3}` を含む）とテスト送信フラグ `testSend` に対して、`DispatchEnqueueService.EnqueueOrderApprovalFaxAsync(orders, testSend, ...)` がFAXジョブを投入するとき、`ISmtpQueueService.EnqueueAsync` に渡す `configKey` は、`testSend == true` のとき `TestConfigKey`（既定 `test-fax`）、`testSend == false` のとき `NormalConfigKey`（既定 `fax`）に一致する。また宛先（`recipient`）は `testSend` の値に関わらず解決済みの実FAX番号（`ResolveFaxRecipient` の結果）がそのまま渡され、MaterialModule 側で宛先の上書き（テスト番号への差し替え）は行われない。
+
+**Validates: Requirements 10.1, 10.3, 10.4, 10.6**
 
 ## Error Handling
 
