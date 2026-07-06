@@ -423,3 +423,47 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**実装フェーズ**：SmtpAgent `ResolveToAddress` 3モード改修（15.2）から着手。
+
+---
+
+## FAX新仕様 実装フェーズ（コア一巡・Bルート）完了
+
+### SmtpAgent（別git・Labs/WindowsService/SmtpAgent）＝コミット `7435a26`
+- 15.2 `SmtpSendService.ResolveToAddress` を送信モード3分岐に改修:
+  - メール直送（fax_domain 空）: 宛先に @ 必須、無ければ例外
+  - FAX送信（fax_domain が @始まりドメイン）: @混入は例外／@なしは数字正規化(先頭0→81)＋ドメイン付与／数字なし例外
+  - 固定宛先（fax_domain が完全アドレス）: 宛先無視で fax_domain 返却
+  - `IsFullAddress`（@ を含み @ の前が非空）ヘルパー追加。`ISmtpSendService` コメントも3モードに更新。診断クリア。
+
+### CommonModule（別git）＝コミット `dbfe065`
+- 15.1 `docs/sql/update_m_smtp_config_modes.sql` 新規（mail/fax/test-fax の UPSERT＋旧 Material/test DELETE・存在ガード・実行ユーザー・db_common_dev）。
+- 15.5 `ISmtpQueueService` の config_key コメントを mail/fax/test-fax に掃討。診断クリア。
+
+### MaterialModule（別git）＝コミット `7bb1220`
+- 11.1 `FaxDispatchOptions`: TestSendEnabled/TestFaxNumber/ConfigKey 削除 → NormalConfigKey="fax"/TestConfigKey="test-fax" 追加（FromAddress/PdfShareRoot 残置）。
+- 11.2 `DispatchEnqueueService.EnqueueOrderApprovalFaxAsync(orders, bool testSend, ct)`: config_key = testSend? TestConfigKey: NormalConfigKey、宛先は実FAX番号そのまま（ResolveRecipientForSend 削除）、dispatch_log の IsTestSend/ConfigKey 記録。`IDispatchEnqueueService` も更新。
+- 11.3 `ApprovalService`/`IApprovalService`: ApproveOrderAsync/ApproveOrdersAsync に `bool faxTestSend=false` 追加し EnqueueOrderApprovalFaxAsync へ受け渡し。
+- 11.4 承認画面 Approvals（Index.cshtml/.cs）: bulkApproveForm 内に「FAXテスト送信」チェックボックス（BindProperty FaxTestSend）追加、OnPostApprove/OnPostBulkApprove で受け渡し。診断クリア。
+
+### テスト移行（MaterialModule.Tests・⚠ Nonaka リポジトリで gitignore＝別管理・ディスク上のみ・診断クリア）
+- 削除メンバー（TestSendEnabled/TestFaxNumber/ConfigKey/ResolveRecipientForSend）と旧シグネチャに依存していたためビルド維持のため移行:
+  - `DispatchEnqueueTestHarness`: Options を NormalConfigKey/TestConfigKey に。
+  - `DispatchEnqueueUnitTests`: 呼び出しに testSend:false・ConfigKey 期待値 "fax"。
+  - `DispatchEnqueueAlgorithmPropertyTests`: 全呼び出しに false 追加。旧 Property 9「config_key 常に Material」を新仕様（testSend で fax/test-fax）に書き換え。
+  - `DispatchEnqueuePropertyTests`: 旧 Property 8（ResolveRecipientForSend 上書き）と生成器 GenerateTestSendInputs を削除。
+  - `DispatchEnqueueConfigBindingTests.cs`: 削除（旧テスト送信方式専用）。
+  - `FaxDispatchOptionsBindingTests.cs`: 新オプション（NormalConfigKey/TestConfigKey）バインド検証に書き換え。
+  - `ApprovalServiceIntegrationTests`: Moq Setup/Verify を3引数（It.IsAny<bool>() 追加）に。
+  - ⚠ **これらテスト .cs は git 管理外（Nonaka で ignore）**。ディスク上は修正済み・診断クリア。バージョン管理はユーザー運用に依存（要確認）。
+
+### コミット（本セッションFAX実装分）
+- SmtpAgent `7435a26` / CommonModule `dbfe065` / MaterialModule `7bb1220` / Nonaka `a88f12f`(smtp spec)・`b77e0f3`(dispatch spec)・`571c70b`(memo)・`f31e1b1`(tasks checkbox)。
+
+### ⚠ 次アクション（残・重要）
+1. **SmtpAgent.Tests の Property 5/6 追随（15.3/15.4）＝要対応**: 既存 SmtpAgent.Tests（ResolveToAddress 系: ProfileResolutionPropertyTests / InvalidRecipientPropertyTests 等）は**旧挙動**（@あれば常に直送・fax_domain空は@なしでも直送）を検証している。新挙動（メール直送で@なし→例外／FAX送信で@混入→例外／test-fax=固定宛先）で**実行時に失敗する可能性**が高い。SmtpAgent.sln のテストを通すには更新が必要（次の最小単位）。
+2. dispatch 11.5 Property 4（任意PBT・config_key 選定）＝未実装（MaterialModule.Tests）。
+3. 15.6 `.kiro/docs/db/テーブル定義書.md` の m_smtp_config（config_key mail/fax/test-fax・fax_domain 送信モード）更新＝未。
+4. ユーザー実行: `update_m_smtp_config_modes.sql`（UPSERT＋旧DELETE・順序注意＝投入側切替後にDELETE）・slnCoCore/SmtpAgent ビルド・実FAX(fax/test-fax)確認。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**SmtpAgent.Tests の Property 5/6 を新3モードに追随（15.3/15.4）**、その後 docs 15.6・dispatch 11.5。
