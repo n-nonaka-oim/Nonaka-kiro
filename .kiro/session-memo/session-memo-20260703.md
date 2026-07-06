@@ -301,3 +301,94 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**押印枠・押印の1.5倍化**（OrderPdfService グループ版 stampRow）。
+
+---
+
+## セッションクローズ追記（押印枠1.5倍化 実施・実機確認待ち）
+
+### 本セッションの実施内容（最小単位・1件）
+- **押印枠・押印の1.5倍化 完了**（発注書グループ版 `GenerateGroupOrderPdfAsync` の stampRow・診断クリア）。
+  - 位置: `MaterialModule/Services/OrderPdfService.cs` → `GenerateGroupOrderPdfAsync` 内 右カラム stampRow ブロック。
+  - 変更（約1.5倍）:
+    | 項目 | 変更前 | 変更後 |
+    |---|---|---|
+    | 押印枠幅 `ConstantItem` | 80 | 120 |
+    | 内枠高さ `Height`（罫線側/内枠側 両方） | 40 | 60 |
+    | 内側 `Padding` | 3 | 4 |
+    | 名前フォント（2文字/3文字/4文字以上） | 10/8/7 | 15/12/11 |
+    | 名前段 `Height` | 20 | 30 |
+    | 日付段 `Height` | 11 | 17 |
+    | 日付フォント | 6 | 9 |
+    | 日付 `PaddingTop` | 1 | 2 |
+  - 罫線太さ（0.5f/1.5f）は視認性のため据え置き。
+  - ※単一版 `GenerateOrderPdfAsync` は SVG丸印方式（別実装）＝今回対象外。印刷/FAX はグループ版のみ。
+
+### 状態
+- ⚠ **未コミット**（コード変更のみ実施。コミットはユーザー判断／次回）。
+- ⚠ **実機の見た目確認待ち**: slnCoCore 再ビルド → 承認→印刷（サンプルSQL利用）で押印枠の拡大・「屋」等の潰れ解消・1ページ収容バランスを確認。
+
+### 運用メモ（本セッションで再確認）
+- **Kiro のタスク実行パネル（Run All 等）が「i.map is not a function」で落ちる**＝一括タスクツールは不安定（ユーザー確認済み・アプリは無関係）。→ **tasks.md チェックボックス直接編集を正**として最小単位で進める。
+
+### 次アクション（新セッションで最優先）
+1. **押印枠1.5倍の実機確認**（ビルド→承認→印刷）。潰れ・枠バランスを見て必要なら微調整。→ 良ければ MaterialModule でコミット。
+2. その後の残（優先度順・memo チェックポイント参照）:
+   - 明細行高/件数バランス調整（`RowMinHeight` 微調整・1ページ収容）。
+   - FAX送信テスト前提の I-3（FaxDispatch設定・SmtpAgent config_key 整理）。
+   - 任意PBT（print-platform 12.14-12.16／dispatch 10.3）・CP 8/10。
+   - 旧テーブル J-2（t_order_reports 保全後DROP）。
+
+### ビルド/実行（ユーザー）
+- slnCoCore 再ビルドで OrderPdfService 変更反映 → Approvals 承認 → 発注書印刷で押印枠確認。
+- SQL: seed_sample_masters.sql → sample_order_approval_10lines.sql → Approvals承認（既実行済み・再利用可）。
+- PrintAgent: SkipPrint=false・DefaultPrinterName=OJP-33094・SumatraPDF配置済・db_common_dev接続。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**押印枠1.5倍の実機確認→微調整→コミット**。
+
+---
+
+## FAX送信 新要件（config_key 3モード・test-fax固定宛先・承認画面チェック）— spec更新フェーズ
+
+### 押印枠1.5倍 コミット済み
+- MaterialModule `94064e2`（発注書グループ版 押印枠1.5倍：枠80→120/内高40→60/名前10.8.7→15.12.11/日付6→9）。実機確認OK（押印枠・行高・仕入先/担当者単位グループ）。
+
+### ユーザー確定要件（FAX送信/SMTP送信）
+- **config_key を fax_domain の形で3モード判別**（Agent はキー名をハードコードせずデータ駆動）:
+  - `mail`（fax_domain 空）＝メール直送：宛先に @ 必須、無ければエラー(9)
+  - `fax`（fax_domain=`@faxmail.com` 等 @始まりドメイン）＝FAX送信：@混入はエラー(9)／@なしは数字正規化(先頭0→81)＋ドメイン付与／数字なしエラー(9)
+  - `test-fax`（fax_domain=`0064871033@faxmail.com` 完全アドレス）＝固定宛先：**宛先を無視し fax_domain へ送信**
+- **旧 config_key `Material`・`test` は廃止**（m_smtp_config から DELETE）。運用は `mail`/`fax`/`test-fax`。
+- **テスト送信は「承認画面(Approvals)の『FAXテスト送信』チェックボックス」でジョブ単位指定**（config_key を test-fax にする）。永続共有状態にしない＝多人数同時運用の競合回避（SmtpMonitor には単発ボタン置かない）。
+- `FaxDispatchOptions.TestSendEnabled`/`TestFaxNumber` は不要化予定（宛先は Agent が固定宛先モードで解決）。
+
+### m_smtp_config 実データ（db_common_dev・ユーザー提示）
+| config_key | host | port | fax_domain |
+|---|---|---|---|
+| fax | 172.16.128.81 | 25 | @faxmail.com |
+| mail | 172.16.128.81 | 25 | （空） |
+| Material | 172.16.128.81 | 25 | @faxmail.com | ← 廃止(DELETE)
+| test | 172.16.128.81 | 25 | （空） | ← 廃止(DELETE)
+| test-fax | 172.16.128.81 | 25 | 0064871033@faxmail.com |
+
+### 他モジュール→CommonModule アクセス方法（確認済み・回答済み）
+- MaterialModule.csproj は既に `..\CommonModule\CommonModule.csproj` を ProjectReference（memo I-2「未参照」は解消済み）。
+- `CommonModuleExtensions.AddCommonModule(services, configuration)`（MainWeb 登録）で `ISmtpQueueService`/`IPrintQueueService`（Scoped）＋`CommonDbContext`（接続文字列 `CommonDb`）登録。
+- 消費側は `using CommonModule.Services;` で interface を ctor 注入し `EnqueueAsync(...)` 呼び出し。FAX＝ISmtpQueueService、印刷＝IPrintQueueService。DB=db_common_dev。
+
+### 本セッションで完了した spec 更新（smtp-sender・CommonModule）— 診断クリア
+- **requirements**: Glossary（config_key 例 mail/fax/test-fax・送信モード3種・完全アドレス・テスト送信指定＝ジョブ単位/非共有/承認画面）／R2（fax_domain 形で送信モード判別・AC6 固定宛先・AC7 Material/test 廃止）／**R6 全面改訂**（送信モード別3モード＋検証エラー：mail @必須・fax @混入エラー/0→81・test-fax 宛先無視）／**R8 全面改訂**（config_key=test-fax・宛先無視・永続共有状態なし・承認画面チェック）／スコープ外の整理。
+- **design**: Overview#6・ResolveToAddress コメント・Worker 宛先(To)決定（固定宛先モード先頭判定）・Sequence図ノート・m_smtp_config 例データ（mail/fax/test-fax）・**Property 5/6 更新**・変更経緯ノート・PBT表・統合/スモークテスト例データ・設計判断テーブル。
+- **tasks**: **新タスク群15**（15.1 m_smtp_config DELETE/UPSERT スクリプト／15.2 ResolveToAddress 3モード改修／15.3-15.4 Property5/6更新／15.5 ISmtpQueueService コメント掃討／15.6 テーブル定義書／15.7 単一正本）＋16 チェックポイント。wave20-22 追加。Notes 追記。
+
+### ⚠ 未コミット（spec 3ファイル）
+- `.kiro/specs/CommonModule/smtp-sender/` requirements.md・design.md・tasks.md（Nonaka リポジトリ・未コミット）。
+
+### 次アクション（最小単位・順に）
+1. **dispatch-monitoring-consolidation spec 更新**（MaterialModule 側の責務）: 承認画面「FAXテスト送信」チェック・DispatchEnqueueService の config_key 選定（通常 `fax`／テスト `test-fax`・現状 `Material` 廃止）・`FaxDispatchOptions`（TestSendEnabled/TestFaxNumber 廃止、ConfigKey 廃止→ NormalConfigKey/TestConfigKey 等）・ApprovalService からチェック値を渡す経路。requirements→design→tasks。
+2. spec コミット（smtp-sender＋dispatch）。
+3. 実装（最小単位・順に）: (a) SmtpAgent `ResolveToAddress` 3モード改修＋Property5/6 → (b) m_smtp_config DELETE/UPSERT スクリプト＋ISmtpQueueService コメント → (c) MaterialModule `FaxDispatchOptions`/`DispatchEnqueueService` config_key 選定 → (d) 承認画面チェックボックス＋ApprovalService 経路 → (e) docs（テーブル定義書）。
+4. ユーザー: m_smtp_config DELETE(Material/test) 実行・slnCoCore/PrintAgent/SmtpAgent ビルド・実FAX(test-fax)確認。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**dispatch-monitoring-consolidation spec 更新**（承認画面チェック・config_key 選定）。

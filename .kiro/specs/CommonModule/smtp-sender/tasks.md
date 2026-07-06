@@ -300,6 +300,45 @@
     - 更新した `.kiro/specs/smtp-sender/` の requirements.md・design.md・tasks.md を `MaterialModule/Doc/specs/smtp-sender/` にコピー（10.4 と同様）
     - _Requirements: （プロジェクトルール: Spec 2箇所配置）_
 
+- [ ] 15. config_key 3モード化（メール直送/FAX送信/固定宛先）とテスト送信の固定宛先方式
+  - [ ] 15.1 m_smtp_config 例データ更新＋旧 config_key 廃止スクリプト
+    - `CommonModule/docs/sql/` に m_smtp_config の運用行（`mail`: fax_domain 空 / `fax`: `@faxmail.com` / `test-fax`: `0064871033@faxmail.com`）の INSERT/UPSERT と、旧 `Material`・`test` 行の DELETE スクリプトを作成（存在ガード付き・実行はユーザーが `db_common_dev` に対して行う旨をコメント明記）
+    - _Requirements: 2.4, 2.5, 2.6, 2.7, 8.6_
+
+  - [ ] 15.2 SmtpAgent ResolveToAddress を送信モード3分岐に改修
+    - `SmtpAgent/Services/SmtpSendService.cs` の `ResolveToAddress` を `fax_domain` の形で3モード判別に改修する
+      - メール直送（`fax_domain` 空）: 宛先に `@` 必須、無ければ例外（メール形式でない）
+      - FAX送信（`fax_domain` が `@` 始まりのドメインのみ）: 宛先に `@` 混入は例外（FAX番号形式でない）／`@` なしは数字正規化（数字抽出＋先頭0→81）＋ `fax_domain` 付与／数字なしは例外
+      - 固定宛先（`fax_domain` が完全アドレス）: 宛先トークンを無視し `fax_domain` の値を返す
+    - 完全アドレス判定（`@` を含み `@` の前が非空）・ドメインのみ判定のヘルパーを追加
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 8.3_
+
+  - [ ]* 15.3 Property 5 を送信モード別解決に更新
+    - **Property 5: 宛先解決は送信モード別に送信先アドレスを生成する**
+    - **Validates: Requirements 2.4, 2.5, 2.6, 6.1, 6.3, 6.5, 6.8, 8.3**
+    - `fax_domain`（空／`@`始まりドメイン／完全アドレス）を生成し、固定宛先モードは宛先無視で `fax_domain` 返却を検証。既存 `// Feature: smtp-sender, Property 5` を更新、100イテレーション以上
+
+  - [ ]* 15.4 Property 6 をモード形式不一致エラーに更新
+    - **Property 6: 送信モードに整合しない/不正な宛先は送信されずエラー状態になる**
+    - **Validates: Requirements 6.4, 6.6, 6.7, 6.9, 6.10**
+    - メール直送で `@` なし・FAX送信で `@` あり・数字なし・`;`分割後有効0件 でエラー(9)を検証。既存 `// Feature: smtp-sender, Property 6` を更新、100イテレーション以上
+
+  - [ ] 15.5 ISmtpQueueService の config_key コメント掃討
+    - `CommonModule/Services/ISmtpQueueService.cs` の XMLコメント config_key 例を `mail`/`fax`/`test-fax` に更新（`Material`/`test` を除去）
+    - _Requirements: 2.7_
+
+  - [ ] 15.6 テーブル定義書の m_smtp_config 記述を更新
+    - `.kiro/docs/db/テーブル定義書.md` の m_smtp_config について、`config_key` の運用値（`mail`/`fax`/`test-fax`）・`fax_domain` の形による送信モード（空=メール直送 / `@`始まりドメイン=FAX送信 / 完全アドレス=固定宛先）を反映
+    - _Requirements: 2.4, 2.5, 2.6, 2.7_
+
+  - [ ] 15.7 Spec 単一正本の確認
+    - 本 spec は `.kiro/specs/CommonModule/smtp-sender/` を単一正本とする（現行ルール）。旧 `MaterialModule/Doc/specs/` へのコピーは作成しない
+    - _Requirements: （プロジェクトルール: Spec 単一正本）_
+
+- [ ] 16. チェックポイント - config_key 3モード化のテストを通す
+  - `ResolveToAddress` 3モード（Property 5/6 更新）を含め全テストが通ることを確認し、不明点があればユーザーに確認する。
+  - ※ 送信側（MaterialModule）の config_key 選定（通常 `fax`／テスト `test-fax`）・承認画面「FAXテスト送信」チェックは別 spec `dispatch-monitoring-consolidation` で実装する（本 spec は Agent/CommonModule/マスタが責務）。
+
 ## Notes
 
 - `*` 付きサブタスクは省略可能（テスト）で、MVP優先時はスキップできる。コア実装タスクには `*` を付けていない。
@@ -309,6 +348,7 @@
 - 既存経路・既存ページの削除タスクは含めない（並行運用方針、要件12）。
 - 15個の Correctness Property はそれぞれ単一のプロパティテストとして実装する（Property 1/5/7/9/2/3/4/6/8/11/10/12/13/14/15）。Property 14/15 と Property 1 への cc/bcc 検証追加は CC/BCC・複数宛先対応（タスク12）で実装する。
 - タスク12以降は CC/BCC・複数宛先（`;`区切り）対応の差分追加であり、`t_smtp_queue` は ALTER TABLE で `cc`/`bcc` 追加・`recipient` 桁拡張を適用する（実行はユーザー側）。タスク1〜11の完了状態は変更しない。
+- タスク15は config_key 3モード化（`fax_domain` の形で メール直送/FAX送信/固定宛先 を判別）＋テスト送信の固定宛先(`test-fax`)方式への変更差分。`ResolveToAddress` の改修に伴い Property 5/6 を更新する（新規 Property は追加しない）。m_smtp_config は旧 `Material`/`test` を DELETE し `mail`/`fax`/`test-fax` を運用する（実行はユーザー側）。送信側（MaterialModule）の config_key 選定・承認画面チェックは別 spec `dispatch-monitoring-consolidation` の責務。
 
 ## Task Dependency Graph
 
@@ -334,7 +374,10 @@
     { "id": 16, "tasks": ["12.2", "12.4", "12.7"] },
     { "id": 17, "tasks": ["12.5", "12.8", "12.9"] },
     { "id": 18, "tasks": ["12.10", "12.11", "14.1"] },
-    { "id": 19, "tasks": ["14.2"] }
+    { "id": 19, "tasks": ["14.2"] },
+    { "id": 20, "tasks": ["15.1", "15.2", "15.5"] },
+    { "id": 21, "tasks": ["15.3", "15.4", "15.6", "15.7"] },
+    { "id": 22, "tasks": ["16"] }
   ]
 }
 ```

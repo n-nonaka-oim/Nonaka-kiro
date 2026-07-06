@@ -32,7 +32,7 @@ smtp-sender（SMTP送信汎用基盤）
 3. **接続プロファイルマスタの複数行化**: `m_smtp_config` を 1行運用から、`config_key`(PK)・`host`・`port`・`fax_domain` のみを持つ**複数行の接続プロファイルマスタ**へ変更する。送信元アドレス・送信元名・テスト送信先・PDF保管先ディレクトリは本マスタから**削除**する。
 4. **汎用ジョブモデル（接続プロファイルキー・差出人をジョブ保持）**: 件名・本文・宛先・添付PDFパスに加え、使用する接続プロファイルキー(`config_key`)・送信元アドレス(`from_address`)・送信元名(`from_name`)をジョブ自身が直接保持する（payload JSON の中から `Destination.Fax` を取り出す現行方式を廃止）。PDF生成・宛先決定は各Producerの責務とし、SmtpAgent は「ジョブの `config_key` で接続先を解決し、ジョブの差出人で送る」役割に純化する。
 5. **監視画面の共通化**: 資材専用Area配下の現行 SmtpMonitor を廃し、全モジュール横断の共通配置とする（配置先は Architecture で確定）。
-6. **テスト送信方式の変更**: 接続プロファイルマスタによる全件宛先上書き(`test_fax_no`)を廃止する。テストは送信元モジュールが `config_key=test`（`fax_domain` 空のプロファイル）＋テスト用メールアドレスをジョブに指定して投入することで実現する。
+6. **接続プロファイルによる送信モード3分岐＋テスト送信方式の変更**: 接続プロファイルの `fax_domain` の**値の形**で送信モードを決定する（空=メール直送／`@`始まりのドメインのみ=FAX送信／`@`前に局所部を持つ完全アドレス=固定宛先）。宛先解決は送信モードに整合しない宛先形式（メール直送モードで `@` なし、FAX送信モードで `@` あり）をエラー化する。テスト送信は接続プロファイルマスタによる全件宛先上書き(`test_fax_no`)を廃止し、送信元モジュールが投入ジョブごとに `config_key=test-fax`（固定宛先モードのプロファイル）を指定することで実現する。SmtpAgent は固定宛先モードのジョブの宛先を無視し、`fax_domain` に保持された固定のテスト宛先へ送信する。テスト指定は永続的・全体共有の状態としては持たず（多人数同時運用での取り違え回避）、発注承認FAXでは承認画面のチェックボックスで承認操作ごとに指定する。旧 `config_key=Material`/`test` は廃止し、運用キーは `mail`/`fax`/`test-fax` とする。
 7. **並行運用**: 既存の `t_order_reports.fax_status` 経路と既存 Print/Smtp ページは削除せず残し、新基盤は別系統として追加する。
 8. **複数宛先・CC/BCC対応**: 宛先(`recipient`)を複数宛先区切り(`;`)で複数トークン保持できるよう `recipient` を `nvarchar(1000)` に拡張し、CC(`cc`)・BCC(`bcc`)列(`nvarchar(1000)`)を追加する。To は各トークンを宛先解決ロジック（@直送/FAX正規化）にかけて複数設定し、CC/BCC は各トークンをメールアドレスとしてそのまま付与する（FAX正規化しない）。`t_smtp_queue` は既に `db_common_dev` に作成済みのため、本変更は新規CREATEではなく **ALTER TABLE（`cc`/`bcc` 追加・`recipient` 桁拡張）** で適用する。
 
@@ -136,10 +136,10 @@ sequenceDiagram
                 W->>DB: status=9, error_message 記録
             else プロファイル解決
                 W->>W: host/port/fax_domain を解決
-                W->>W: To宛先解決（recipientを;分割・trim・空除外→各トークン: @含む→直送 / fax_domain空→直送 / それ以外→数字抽出・0→81・domain付与）
+                W->>W: 送信モード判定（fax_domain空=メール直送 / @始まりドメイン=FAX送信 / 完全アドレス=固定宛先）→To解決（固定宛先: recipient無視しfax_domain / メール直送: @必須(無→エラー) / FAX送信: @混入→エラー・数字正規化0→81・domain付与）
                 W->>W: CC/BCC解決（cc/bccを;分割・trim・空除外→FAX正規化せずそのまま）
                 W->>W: pdf_path 実在チェック→添付判定
-                alt 宛先不正（有効To0件/数字なし）
+                alt 宛先不正（モード形式不一致/有効To0件/数字なし）
                     W->>DB: status=9, error_message 記録
                 else 正常
                     W->>S: SMTP送信（差出人=ジョブの from_address/from_name）
@@ -170,10 +170,10 @@ public interface ISmtpQueueService
     /// 送信ジョブを共通送信キューに1件投入する。status=1(待機)で登録される。
     /// </summary>
     /// <param name="module">投入元モジュール識別子（例: "material"）。</param>
-    /// <param name="configKey">使用する接続プロファイルキー（m_smtp_config.config_key、例: "Material", "test"）。</param>
+    /// <param name="configKey">使用する接続プロファイルキー（m_smtp_config.config_key、"mail"/"fax"/"test-fax"）。</param>
     /// <param name="fromAddress">送信元アドレス。</param>
     /// <param name="fromName">送信元表示名（空可）。</param>
-    /// <param name="recipient">宛先。@を含めばメールアドレス、含まなければFAX番号。複数宛先区切り(;)で複数指定可。</param>
+    /// <param name="recipient">宛先。@を含めばメールアドレス、含まなければFAX番号。複数宛先区切り(;)で複数指定可。固定宛先モード(test-fax)では無視される。</param>
     /// <param name="subject">件名。</param>
     /// <param name="body">本文（空可）。</param>
     /// <param name="cc">CC宛先。複数宛先区切り(;)で複数指定可。未指定(null)はCC列をNULL登録。</param>
@@ -209,12 +209,16 @@ public interface ISmtpQueueService
 public interface ISmtpSendService
 {
     /// <summary>
-    /// 単一の宛先トークンを解決して実際の送信先アドレスを生成する純粋関数。
-    /// ① 宛先が@を含む → そのままメールアドレスとして直送（fax_domain設定に関わらず）。
-    /// ② profile.FaxDomain が空 → そのままメールアドレスとして直送（正規化しない）。
-    /// ③ profile.FaxDomain 設定済かつ@なし → FAX番号正規化（数字抽出＋先頭0→81）＋ fax_domain 付与。
-    /// 宛先が空、または②③で数字を1文字も含まない場合は例外を送出する。
-    /// 複数宛先(;区切り)の分割・trim・空除外は呼び出し側(Worker)の責務であり、本メソッドは1トークンのみを扱う。
+    /// 単一の宛先トークンを、接続プロファイルの fax_domain の形で決まる送信モードに従って解決する純粋関数。
+    /// 送信モード判別: FaxDomain 空=メール直送 / FaxDomain が '@' 始まりのドメインのみ=FAX送信 /
+    /// FaxDomain が完全アドレス('@' の前に局所部あり、例 0064871033@faxmail.com)=固定宛先。
+    /// ① メール直送モード: 宛先が '@' を含む → そのまま送信先。'@' を含まない → 例外（メール形式でない）。
+    /// ② FAX送信モード: 宛先が '@' を含まない → FAX番号正規化（数字抽出＋先頭0→81）＋ fax_domain 付与。
+    ///    宛先が '@' を含む → 例外（FAX番号形式でない）。正規化結果が数字を1文字も含まない → 例外。
+    /// ③ 固定宛先モード: 宛先トークンを無視し、FaxDomain の値そのものを送信先とする。
+    /// 宛先が空（メール直送/FAX送信モード時）は例外を送出する。
+    /// 複数宛先(;区切り)の分割・trim・空除外は呼び出し側(Worker)の責務であり、本メソッドは1トークンのみを扱う
+    /// （固定宛先モードでは分割結果に関わらず単一の固定宛先を返す）。
     /// </summary>
     string ResolveToAddress(MSmtpConfig profile, string recipientToken);
 
@@ -252,7 +256,7 @@ public interface ISmtpSendService
 }
 ```
 
-`ResolveToAddress` は、宛先トークンと接続プロファイルの `fax_domain` の組み合わせで送信先を決定する純粋関数。空・数字なしのケースは例外を送出し、Worker はこの例外を捕捉して当該ジョブを status=9 にする。`fax_domain` が空のプロファイル（例: `test`）では正規化を一切行わず宛先をそのまま使う。
+`ResolveToAddress` は、宛先トークンと接続プロファイルの `fax_domain` の**形**で決まる送信モード（メール直送／FAX送信／固定宛先）に従って送信先を決定する純粋関数。メール直送モード（`fax_domain` 空、例: `mail`）は宛先に `@` を必須とし、無ければ例外。FAX送信モード（`fax_domain` が `@` 始まりのドメインのみ、例: `fax`）は宛先に `@` があれば例外（FAX番号形式でない）、無ければ数字正規化（数字抽出＋先頭0→81）＋ `fax_domain` 付与し、数字なしは例外。固定宛先モード（`fax_domain` が完全アドレス、例: `test-fax` の `0064871033@faxmail.com`）は宛先を無視し `fax_domain` を送信先とする。Worker は例外を捕捉して当該ジョブを status=9 にする。
 
 `BuildMessage`/`SendMail` は解決済みの `toAddresses`（1件以上）を `MailMessage.To` に、`ccAddresses` を `MailMessage.CC` に、`bccAddresses` を `MailMessage.Bcc` に追加する。CC/BCC は FAX正規化を行わずトークンをそのままメールアドレスとして使用し、空コレクションのとき該当ヘッダは付与しない（要件13.1/13.2/13.6/13.7/13.8）。
 
@@ -265,7 +269,7 @@ public interface ISmtpSendService
 - 取得時 `Status=2`, `PickedAt=now`, `UpdatedAt=now` で `SaveChangesAsync`。`DbUpdateConcurrencyException` はスキップ（現行踏襲、`row_version` による楽観ロック）。
 - 接続プロファイル解決: ジョブの `config_key` で `m_smtp_config` を引き、`host`/`port`/`fax_domain` を解決。該当プロファイルが存在しなければ送信せず `Status=9`（エラー）、`ErrorMessage` に記録（要件5.2）。
 - 差出人: ジョブの `from_address`/`from_name` を `MailMessage.From` に設定（要件5.5）。
-- 宛先(To)決定: ジョブの `recipient` を複数宛先区切り(`;`)で分割し、各トークンを trim、trim後に空となるトークンを除外する。残った各トークンを `ResolveToAddress(profile, token)` で解決し、To アドレスのリストを構築する。各トークンの解決は ① 宛先が `@` を含む→直送、② `profile.FaxDomain` が空→直送（正規化しない）、③ `profile.FaxDomain` 設定済かつ `@` なし→FAX番号正規化（数字抽出＋先頭0→81）＋ `fax_domain` 付与（要件6.9〜6.12）。有効な To トークンが1件も無い場合、または解決時に空・数字なしで例外となった場合は送信せず `Status=9`（要件6.7/6.8/6.13）。`test_fax_no` による全件上書きロジックは廃止。
+- 宛先(To)決定: まず `profile.FaxDomain` の形から送信モードを判定する。**固定宛先モード**（`fax_domain` が完全アドレス、例 `test-fax`）の場合は、ジョブの `recipient` を無視し `fax_domain` の値のみを唯一の To とする（要件6.8）。**メール直送/FAX送信モード**の場合は、ジョブの `recipient` を複数宛先区切り(`;`)で分割し、各トークンを trim、trim後に空となるトークンを除外し、残った各トークンを `ResolveToAddress(profile, token)` で解決して To リストを構築する。各トークンの解決は、メール直送（`fax_domain` 空）＝`@` 必須（無ければ例外）、FAX送信（`fax_domain` が `@` 始まりドメイン）＝`@` 混入は例外・`@` なしは数字正規化（数字抽出＋先頭0→81）＋ `fax_domain` 付与・数字なしは例外（要件6.2〜6.7/6.9〜6.11）。有効な To トークンが1件も無い場合、または解決時に例外となった場合は送信せず `Status=9`（要件6.4/6.6/6.7/6.9/6.10）。`test_fax_no` による全件上書きロジックは廃止。
 - CC/BCC決定: ジョブの `cc`/`bcc` をそれぞれ複数宛先区切り(`;`)で分割し、各トークンを trim、trim後に空となるトークンを除外する。CC/BCC は **FAX正規化を行わず**、トークンをそのままメールアドレスとして使用する（要件13.3〜13.6）。`cc`/`bcc` が NULL/空、または有効トークンが0件の場合は当該ヘッダを付与しない（要件13.1/13.2）。解決済みの To/CC/BCC リストを `SendMail`（内部で `BuildMessage`）に渡す。
 - 添付PDF: ジョブの `pdf_path`（フルパス）が指定され、かつ実在する場合のみ添付。実在しなければ添付なしで送信しログ記録（PDF保管先の共通設定は廃止）。
 - 送信成功時 `Status=3`, `CompletedAt=now`。例外時 `Status=9`, `ErrorMessage`（500字truncate）。
@@ -303,7 +307,7 @@ public interface ISmtpSendService
 |---|---|---|---|
 | id | int (IDENTITY) | PK | 主キー |
 | module | nvarchar(40) | YES | 投入元モジュール識別（例: `material`） |
-| config_key | nvarchar(40) | YES | 使用する接続プロファイルキー（`m_smtp_config.config_key`、例: `Material`/`test`） |
+| config_key | nvarchar(40) | YES | 使用する接続プロファイルキー（`m_smtp_config.config_key`、`mail`/`fax`/`test-fax`） |
 | from_address | nvarchar(256) | YES | 送信元アドレス |
 | from_name | nvarchar(100) | NO | 送信元表示名（NULL/空可） |
 | recipient | nvarchar(1000) | YES | 宛先(To)。@含む=メールアドレス、含まない=FAX番号。複数宛先区切り(`;`)で複数トークン保持可 |
@@ -389,19 +393,20 @@ public class TSmtpQueue
 
 | カラム名 | 型 | 必須 | 説明 |
 |---|---|---|---|
-| config_key | nvarchar(40) | PK | 接続プロファイルキー（例: `Material`, `test`） |
+| config_key | nvarchar(40) | PK | 接続プロファイルキー（`mail`/`fax`/`test-fax`） |
 | host | nvarchar(100) | YES | SMTPサーバホスト（既定 `172.16.128.81`） |
 | port | int | YES | SMTPポート（既定 `25`） |
-| fax_domain | nvarchar(100) | NO | FAXゲートウェイドメイン（例 `@faxmail.com`）。空=メール直送用 |
+| fax_domain | nvarchar(100) | NO | FAXゲートウェイドメイン。値の形で送信モードを決定（空=メール直送 / `@`始まりドメイン=FAX送信 / 完全アドレス=固定宛先） |
 
-例データ:
+例データ（現行運用）:
 
-| config_key | host | port | fax_domain |
-|---|---|---|---|
-| Material | 172.16.128.81 | 25 | `@faxmail.com` |
-| test | 172.16.128.81 | 25 | （空） |
+| config_key | host | port | fax_domain | 送信モード |
+|---|---|---|---|---|
+| mail | 172.16.128.81 | 25 | （空） | メール直送 |
+| fax | 172.16.128.81 | 25 | `@faxmail.com` | FAX送信 |
+| test-fax | 172.16.128.81 | 25 | `0064871033@faxmail.com` | 固定宛先（テスト） |
 
-`fax_domain` が設定済みの行はメールtoFAX用の接続、空の行はメール直送用の接続として扱われる（要件2.4/2.5）。
+`fax_domain` の形により送信モードが決まる（要件2.4/2.5/2.6）。旧 `Material`・`test` は廃止（要件2.7・m_smtp_config から DELETE）。
 
 ```csharp
 [Table("m_smtp_config")]
@@ -454,7 +459,7 @@ stateDiagram-v2
 
 本基盤は、宛先正規化（純粋関数）・状態遷移（待機→処理中→完了/エラー）・排他取得という、入力で振る舞いが大きく変わるロジックを多く含むため、プロパティベーステスト(PBT)が有効である。一方で実SMTP送信・テーブル物理配置・並行運用といった外部/構成要件は統合テスト・スモークテストで扱う（Testing Strategy 参照）。
 
-以下のプロパティは prework のテスタビリティ分析と冗長性排除（Property Reflection）を経て確定したものである。旧 Property 8（`test_fax_no` 設定時かつそのときに限り宛先上書き）は、テスト送信先の全件上書き方式の廃止に伴い**削除**し、代わりに接続プロファイル解決失敗のエラー化（新 Property 4）を追加した。複数宛先(To)・CC/BCC 対応に伴い、単一トークン解決の Property 5 を維持しつつ、複数宛先解決（Property 14）・CC/BCC付与の同値（Property 15）を追加し、不正宛先のエラー化（Property 6）に「`;` 分割後に有効トークン0件」のケースを統合した。
+以下のプロパティは prework のテスタビリティ分析と冗長性排除（Property Reflection）を経て確定したものである。旧 Property 8（`test_fax_no` 設定時かつそのときに限り宛先上書き）は、テスト送信先の全件上書き方式の廃止に伴い**削除**し、代わりに接続プロファイル解決失敗のエラー化（新 Property 4）を追加した。複数宛先(To)・CC/BCC 対応に伴い、単一トークン解決の Property 5 を維持しつつ、複数宛先解決（Property 14）・CC/BCC付与の同値（Property 15）を追加し、不正宛先のエラー化（Property 6）に「`;` 分割後に有効トークン0件」のケースを統合した。**さらに config_key 3モード化（`fax_domain` の形＝空/`@`始まりドメイン/完全アドレス で メール直送/FAX送信/固定宛先 を判別）に伴い、Property 5 を送信モード別解決（固定宛先モードの宛先無視を含む）に、Property 6 を送信モード形式不一致（メール直送で `@` なし・FAX送信で `@` あり）を含むエラー化に更新した。テスト送信は固定宛先モード（`test-fax`）で表現し、Property 5(a) が固定宛先への送信を担保する。**
 
 ### Property 1: 投入されたジョブは待機状態で全項目が保持される
 
@@ -480,17 +485,17 @@ stateDiagram-v2
 
 **Validates: Requirements 5.1, 5.2**
 
-### Property 5: 宛先解決は宛先種別と接続プロファイルに応じた送信先アドレスを生成する
+### Property 5: 宛先解決は送信モード別に送信先アドレスを生成する
 
-*For any* 単一の宛先トークンと接続プロファイルの組について、(a) 宛先が `@` を含む場合は、接続プロファイルの `fax_domain` 設定に関わらず前後空白を除去した宛先がそのまま送信先となる。(b) 宛先が `@` を含まず接続プロファイルの `fax_domain` が空の場合は、宛先がそのまま送信先となり FAX番号正規化・ドメイン付与は行われない。(c) 宛先が `@` を含まず `fax_domain` が設定済みの場合は、数字以外の文字が除去され、正規化前が先頭 `0` を持つならば先頭 `0` が `81` に置換され、結果の数字列に `fax_domain` が付与された送信先メールアドレスが生成される。本プロパティは `ResolveToAddress` が扱う **1トークン**の解決を検証する（複数宛先の分割は Property 14 が扱う）。
+*For any* 単一の宛先トークンと接続プロファイルの組について、接続プロファイルの `fax_domain` の形で決まる送信モードに応じて次のとおり送信先が生成される。(a) **固定宛先モード**（`fax_domain` が完全アドレス）では、宛先トークンの内容に関わらず `fax_domain` の値そのものが送信先となる。(b) **メール直送モード**（`fax_domain` 空）で宛先が `@` を含む場合は、前後空白を除去した宛先がそのまま送信先となり FAX番号正規化・ドメイン付与は行われない。(c) **FAX送信モード**（`fax_domain` が `@` 始まりのドメインのみ）で宛先が `@` を含まない場合は、数字以外の文字が除去され、正規化前が先頭 `0` を持つならば先頭 `0` が `81` に置換され、結果の数字列に `fax_domain` が付与された送信先メールアドレスが生成される。本プロパティは `ResolveToAddress` が扱う **1トークン**の解決を検証する（複数宛先の分割は Property 14 が扱う）。
 
-**Validates: Requirements 2.4, 2.5, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 8.4**
+**Validates: Requirements 2.4, 2.5, 2.6, 6.1, 6.3, 6.5, 6.8, 8.3**
 
-### Property 6: 不正な宛先は送信されずエラー状態になる
+### Property 6: 送信モードに整合しない/不正な宛先は送信されずエラー状態になる
 
-*For any* 宛先と接続プロファイルの組について、宛先(`recipient`)を複数宛先区切り(`;`)で分割し trim・空トークン除外した結果、有効な宛先トークンが1件も存在しない場合（宛先が空・空白のみ・区切り文字のみ等）、または FAX番号として正規化する経路（`@` を含まずかつ `fax_domain` が設定済み）において正規化結果が数字を1文字も含まないトークンが含まれる場合、当該ジョブは送信されず、送信ステータスがエラー(9)に更新される。
+*For any* 宛先と接続プロファイルの組について、次のいずれかに該当する場合、当該ジョブは送信されず送信ステータスがエラー(9)に更新される。(a) メール直送モード（`fax_domain` 空）で宛先トークンが `@` を含まない（メールアドレス形式でない）。(b) FAX送信モード（`fax_domain` が `@` 始まりのドメインのみ）で宛先トークンが `@` を含む（FAX番号形式でない）。(c) FAX送信モードで正規化結果が数字を1文字も含まない。(d) メール直送/FAX送信モードにおいて、宛先(`recipient`)を複数宛先区切り(`;`)で分割し trim・空トークン除外した結果、有効な宛先トークンが1件も存在しない（宛先が空・空白のみ・区切り文字のみ等）。なお固定宛先モードでは宛先トークンを無視するため本エラーは発生しない。
 
-**Validates: Requirements 6.7, 6.8, 6.13**
+**Validates: Requirements 6.4, 6.6, 6.7, 6.9, 6.10**
 
 ### Property 7: 送信メッセージの差出人と件名はジョブの値が設定される
 
@@ -590,8 +595,8 @@ stateDiagram-v2
 | 2 取得順序・遷移 | Worker取得ロジック | ジョブ集合（status/created_at 各種） | InMemory |
 | 3 排他 at-most-once | 取得SaveChanges | 単一ジョブ＋並行更新 | rowversion競合 |
 | 4 プロファイル解決失敗→エラー | Worker解決ロジック | config_key（存在/不在）＋プロファイル集合 | InMemory |
-| 5 宛先解決(単一トークン) | `ResolveToAddress` | 宛先トークン＋プロファイル（fax_domain空/非空） | 純粋関数 |
-| 6 宛先不正エラー | Worker送信処理 | 空/数字なし/`;`分割後有効0件＋プロファイル | 送信モック |
+| 5 宛先解決(単一トークン・3モード) | `ResolveToAddress` | 宛先トークン＋プロファイル（fax_domain: 空/`@`始まりドメイン/完全アドレス） | 純粋関数。固定宛先モードは宛先無視でfax_domain返却 |
+| 6 モード不一致/宛先不正エラー | Worker送信処理 | メール直送で`@`なし/FAX送信で`@`あり/数字なし/`;`分割後有効0件＋プロファイル | 送信モック |
 | 7 送信メッセージ組立 | `BuildMessage` メッセージ組立 | from_address/from_name/subject | From/Subject検証 |
 | 8 送信成功遷移 | Worker送信後処理 | 取得済みジョブ | 送信モック成功 |
 | 9 添付判定 | `BuildMessage` メッセージ組立 | pdf_path（null/実在/不在） | 一時ファイル or 実在判定注入 |
@@ -610,14 +615,14 @@ stateDiagram-v2
 
 ### 統合テスト（1〜3例）
 
-- 実SMTP送信（5.3/5.4）: `172.16.128.81:25` へメール直送（添付なし疎通／PDF添付あり）。`config_key=test`（`fax_domain` 空）＋宛先にテスト用メールアドレスを指定したジョブを投入し着信確認（既存 `test_smtp_send.sql` 相当のシナリオを `t_smtp_queue` 版＝`config_key`・差出人列ありに更新）。
+- 実SMTP送信（5.3/5.4）: `172.16.128.81:25` へ送信（添付なし疎通／PDF添付あり）。`config_key=mail`（`fax_domain` 空）＋宛先にテスト用メールアドレスを指定したジョブでメール直送を確認、`config_key=test-fax`（固定宛先モード）＋任意の宛先で固定テスト宛先(`0064871033@faxmail.com`)への着信を確認（既存 `test_smtp_send.sql` 相当のシナリオを `t_smtp_queue` 版＝`config_key`・差出人列ありに更新）。
 - DB配置（1.1〜1.5）: `db_common_dev` に3テーブルが作成され、SmtpAgent が `db_common_dev` へ接続し1ジョブを処理できる。
 - 並行運用（12.1〜12.3）: 既存 `t_order_reports.fax_status` 経路と新 `t_smtp_queue` 経路が同一環境で同時に稼働できる。
 
 ### スモークテスト（単発）
 
 - スキーマ確認: `t_smtp_queue` に `config_key`/`from_address`/`from_name`/`cc`/`bcc`/`row_version`(rowversion) が存在し、`recipient`・`cc`・`bcc` が `nvarchar(1000)` である（`cc`/`bcc` 追加・`recipient` 桁拡張の ALTER 適用確認）。
-- スキーマ確認: `m_smtp_config` が `config_key`(PK)/`host`/`port`/`fax_domain` のみを持ち、`from_address`/`from_name`/`test_fax_no`/`pdf_directory` を持たない（要件2.3/7.2/8.5）。例データ（`Material`/`test` 2行）が投入できる。
+- スキーマ確認: `m_smtp_config` が `config_key`(PK)/`host`/`port`/`fax_domain` のみを持ち、`from_address`/`from_name`/`test_fax_no`/`pdf_directory` を持たない（要件2.3/7.2/8.8）。例データ（`mail`/`fax`/`test-fax` 3行）が投入でき、旧 `Material`/`test` 行が存在しない（要件2.7）。
 - 構成確認: SmtpAgent の `SmtpAgentDbContext` が SMTP系3テーブルのみを対象とし、資材固有テーブルを参照しない（要件1.4/4.1）。
 - 配置確認: 監視画面が CommonModule(Area `Common`) に配置され、資材専用Areaに存在しない（要件11.1/11.2）。
 
@@ -631,7 +636,7 @@ stateDiagram-v2
 | `m_smtp_config` を複数行の接続プロファイルマスタ化（`config_key`/`host`/`port`/`fax_domain` のみ） | 本番FAX用とテスト用など複数接続を切り替え可能に（要件2）。差出人・PDFパス・テスト送信先をマスタから分離 |
 | SmtpAgent は CommonModule を参照せず独自エンティティを保持 | Worker は別ソリューション・別配布。同一スキーマへのマップを設計で担保し疎結合を維持 |
 | PDF はジョブの `pdf_path` にフルパス保持（共通の保管先ディレクトリ設定を廃止） | PDF生成は各Producerの責務（要件7.1/7.2）。基盤に保管先を持たせない |
-| テスト送信は `config_key=test`（`fax_domain` 空）＋テスト用メール宛先で実現（`test_fax_no` 全件上書きを廃止） | マスタによる一律上書きをやめ、ジョブ単位でテスト経路を選択（要件8）。送信パラメータは各モジュール責務 |
+| テスト送信は `config_key=test-fax`（固定宛先モード＝`fax_domain` が完全アドレス）で実現し、Agent が宛先を無視して固定テスト宛先へ送信（`test_fax_no` 全件上書きを廃止） | マスタによる一律上書きをやめ、ジョブ単位でテスト経路を選択（要件8）。テスト宛先値は `test-fax` プロファイルが保持。永続共有状態を持たず多人数運用でも競合しない |
 | 既存 `MaterialModule.Data.CommonDbContext`（カレンダー）はそのまま残す | 並行運用方針（要件11）。SMTP系は新DbContextで別管理し、将来統合は別タスク |
 | 自動リトライなし・手動再送のみ | 要件10.2。多重送信防止のため、確認のうえ再送 |
 | `recipient` を `;` 区切りで複数トークン保持し、To は各トークンを宛先解決ロジックにかけて複数設定 | 要件6.9〜6.13。`recipient` を `nvarchar(1000)` に拡張。`ResolveToAddress` は1トークン純粋関数を維持し、分割・空除外は Worker が担い関心を分離 |
