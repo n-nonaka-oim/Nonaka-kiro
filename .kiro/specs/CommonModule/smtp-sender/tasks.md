@@ -301,11 +301,11 @@
     - _Requirements: （プロジェクトルール: Spec 2箇所配置）_
 
 - [ ] 15. config_key 3モード化（メール直送/FAX送信/固定宛先）とテスト送信の固定宛先方式
-  - [ ] 15.1 m_smtp_config 例データ更新＋旧 config_key 廃止スクリプト
+  - [x] 15.1 m_smtp_config 例データ更新＋旧 config_key 廃止スクリプト
     - `CommonModule/docs/sql/` に m_smtp_config の運用行（`mail`: fax_domain 空 / `fax`: `@faxmail.com` / `test-fax`: `0064871033@faxmail.com`）の INSERT/UPSERT と、旧 `Material`・`test` 行の DELETE スクリプトを作成（存在ガード付き・実行はユーザーが `db_common_dev` に対して行う旨をコメント明記）
     - _Requirements: 2.4, 2.5, 2.6, 2.7, 8.6_
 
-  - [ ] 15.2 SmtpAgent ResolveToAddress を送信モード3分岐に改修
+  - [x] 15.2 SmtpAgent ResolveToAddress を送信モード3分岐に改修
     - `SmtpAgent/Services/SmtpSendService.cs` の `ResolveToAddress` を `fax_domain` の形で3モード判別に改修する
       - メール直送（`fax_domain` 空）: 宛先に `@` 必須、無ければ例外（メール形式でない）
       - FAX送信（`fax_domain` が `@` 始まりのドメインのみ）: 宛先に `@` 混入は例外（FAX番号形式でない）／`@` なしは数字正規化（数字抽出＋先頭0→81）＋ `fax_domain` 付与／数字なしは例外
@@ -323,7 +323,7 @@
     - **Validates: Requirements 6.4, 6.6, 6.7, 6.9, 6.10**
     - メール直送で `@` なし・FAX送信で `@` あり・数字なし・`;`分割後有効0件 でエラー(9)を検証。既存 `// Feature: smtp-sender, Property 6` を更新、100イテレーション以上
 
-  - [ ] 15.5 ISmtpQueueService の config_key コメント掃討
+  - [x] 15.5 ISmtpQueueService の config_key コメント掃討
     - `CommonModule/Services/ISmtpQueueService.cs` の XMLコメント config_key 例を `mail`/`fax`/`test-fax` に更新（`Material`/`test` を除去）
     - _Requirements: 2.7_
 

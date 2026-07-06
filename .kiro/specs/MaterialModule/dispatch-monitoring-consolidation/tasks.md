@@ -144,24 +144,24 @@
     - _Requirements: 4.2, 4.5, 8.1_
 
 - [ ] 11. FAX送信の config_key 選定と承認画面テスト送信（R10）
-  - [ ] 11.1 `FaxDispatchOptions` を改修（config_key 選定・テスト設定廃止）
+  - [x] 11.1 `FaxDispatchOptions` を改修（config_key 選定・テスト設定廃止）
     - `MaterialModule/Configuration/FaxDispatchOptions.cs` から `TestSendEnabled`・`TestFaxNumber`・`ConfigKey`（`"Material"` 固定）を削除
     - `NormalConfigKey`（既定 `"fax"`）・`TestConfigKey`（既定 `"test-fax"`）を追加。`FromAddress` は継続保持
     - _Requirements: 10.1, 10.5_
 
-  - [ ] 11.2 `IDispatchEnqueueService`/`DispatchEnqueueService` に testSend を追加し config_key を選定
+  - [x] 11.2 `IDispatchEnqueueService`/`DispatchEnqueueService` に testSend を追加し config_key を選定
     - `EnqueueOrderApprovalFaxAsync` に `bool testSend` 引数を追加（`EnqueueOrderApprovalFaxAsync(List<TOrder> orders, bool testSend, CancellationToken ct = default)`）
     - config_key = `testSend ? _options.TestConfigKey : _options.NormalConfigKey` を `ISmtpQueueService.EnqueueAsync` の `configKey` へ渡す（従来の固定 `_options.ConfigKey` を廃止）
     - `ResolveRecipientForSend`（`TestSendEnabled` 時に `TestFaxNumber` へ上書き）を削除し、宛先は `ResolveFaxRecipient` の実FAX番号をそのまま渡す（test-fax は SmtpAgent が宛先を無視するため）
     - `t_order_dispatch_log.IsTestSend` に `testSend`、`ConfigKey` に選定値を記録
     - _Requirements: 10.1, 10.3, 10.4, 10.6_
 
-  - [ ] 11.3 `IApprovalService`/`ApprovalService` に faxTestSend を追加し受け渡し
+  - [x] 11.3 `IApprovalService`/`ApprovalService` に faxTestSend を追加し受け渡し
     - `ApproveOrdersAsync`/`ApproveOrderAsync` に `bool faxTestSend = false` を追加し、`_dispatchEnqueueService.EnqueueOrderApprovalFaxAsync(orders, faxTestSend, ct)` へ渡す
     - 印刷投入（`PrintJobService`）はテスト送信の影響を受けない（既存呼び出しのまま）
     - _Requirements: 10.2, 10.3, 10.4_
 
-  - [ ] 11.4 承認画面（Approvals）に「FAXテスト送信」チェックボックスを追加
+  - [x] 11.4 承認画面（Approvals）に「FAXテスト送信」チェックボックスを追加
     - `MaterialModule/Areas/Material/Pages/Approvals/Index.cshtml(.cs)` の承認操作近傍にチェックボックスを配置（既定 OFF）。`_MaterialStyles`・`material-page` 規約準拠
     - 承認 POST ハンドラでチェック値をバインドし `ApprovalService` の承認メソッドへ `faxTestSend` として渡す。永続化・全体共有しない（当該 POST でのみ有効）
     - このフラグは Common_SmtpMonitor には設けない
