@@ -392,3 +392,34 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**dispatch-monitoring-consolidation spec 更新**（承認画面チェック・config_key 選定）。
+
+---
+
+## FAX新仕様 spec更新フェーズ 完了（smtp-sender＋dispatch 両spec・全コミット済み）
+
+### smtp-sender（CommonModule）spec 更新・コミット `a88f12f`
+- requirements/design/tasks を config_key 3モード（fax_domain の形で判別）・test-fax固定宛先・Material/test廃止・承認画面テスト送信 で整合。**新タスク群15**（15.1 m_smtp_config DELETE/UPSERT・15.2 ResolveToAddress 3モード改修・15.3/15.4 Property5/6更新・15.5 ISmtpQueueService掃討・15.6 テーブル定義書・15.7 単一正本／16 チェックポイント）。wave20-22。
+
+### dispatch-monitoring-consolidation（MaterialModule）spec 更新・コミット `b77e0f3`
+- requirements: Introduction項目6・Glossary(config_key/FAXテスト送信指定)・**新 Requirement 10**（config_key選定 fax/test-fax・承認画面チェック・ジョブ単位/非共有・test-fax時 宛先上書きなし・共通監視画面に置かない・宛先解決は smtp-sender 所有）。
+- design: Overview項目6・**Component 7**（FaxDispatchOptions 改修＝TestSendEnabled/TestFaxNumber/ConfigKey 廃止→NormalConfigKey/TestConfigKey／DispatchEnqueueService testSend引数・config_key選定・ResolveRecipientForSend廃止／ApprovalService faxTestSend／Approvals チェックボックス）・**Property 4**（config_key選定・宛先非上書き）。
+- tasks: **新タスク群11**（11.1 FaxDispatchOptions／11.2 DispatchEnqueueService testSend・config_key選定・宛先上書き廃止／11.3 ApprovalService faxTestSend／11.4 承認画面チェックボックス／11.5 Property4／11.6 チェックポイント）。wave10-13。
+
+### ⚠ 未着手＝実装（次フェーズ・最小単位・順に）
+実装順の推奨（Agent/CommonModule → MaterialModule）:
+1. **SmtpAgent**（別git・Labs/WindowsService/SmtpAgent）: 15.2 `SmtpSendService.ResolveToAddress` を3モード改修（mail=@必須/fax=@混入エラー・0→81・付与/test-fax=宛先無視でfax_domain）。完全アドレス判定ヘルパー追加。15.3/15.4 Property5/6 更新（SmtpAgent.Tests）。
+2. **CommonModule**（別git）: 15.1 m_smtp_config の mail/fax/test-fax UPSERT＋旧 Material/test DELETE スクリプト（CommonModule/docs/sql・実行ユーザー）。15.5 ISmtpQueueService.cs の config_key コメント掃討（Material/test→mail/fax/test-fax）。
+3. **MaterialModule**（別git）: 11.1 FaxDispatchOptions（TestSendEnabled/TestFaxNumber/ConfigKey 廃止→NormalConfigKey="fax"/TestConfigKey="test-fax"）→ 11.2 DispatchEnqueueService（testSend引数・config_key選定・ResolveRecipientForSend削除・実FAX番号そのまま）→ 11.3 ApprovalService（faxTestSend 受け渡し・IApprovalService シグネチャ変更）→ 11.4 承認画面 Approvals チェックボックス＋POSTバインド。
+4. docs: 15.6 `.kiro/docs/db/テーブル定義書.md` の m_smtp_config（config_key mail/fax/test-fax・fax_domain 送信モード）更新。
+5. ユーザー: m_smtp_config DELETE(Material/test)＋UPSERT 実行・slnCoCore/SmtpAgent ビルド・実FAX(fax/test-fax)確認。
+
+### ⚠ ビルド順の注意
+- DispatchEnqueueService の EnqueueOrderApprovalFaxAsync に testSend 引数追加＝呼び出し元 ApprovalService も同時修正必須（slnCoCore 中間状態回避のため 11.2→11.3→11.4 を続けて実施）。
+- SmtpAgent の ResolveToAddress 改修は SmtpAgent 単独ソリューション（slnCoCore と独立ビルド）。
+- config_key 実データ切替（Material/test DELETE）は SmtpAgent デプロイ後・投入側 config_key 切替（fax/test-fax）後に整合。旧 Material 参照が残る間は Material 行を消さない順序に注意（投入側 11.x デプロイ→ m_smtp_config 整備）。
+
+### コミット状況（本セッション追加分）
+- MaterialModule `94064e2`（押印枠1.5倍）。Nonaka `a88f12f`（smtp-sender spec）・`b77e0f3`（dispatch spec）・（本メモ追記は次コミット）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260703）。次アクション＝**実装フェーズ**：SmtpAgent `ResolveToAddress` 3モード改修（15.2）から着手。
