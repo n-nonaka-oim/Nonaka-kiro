@@ -123,6 +123,30 @@ erDiagram
 
 ---
 
+## 共通DB（db_common_dev）— 送信設定マスタ（send-config-master）
+
+DB: `db_common_dev` / Server: `OJIADM23120073\DEVELOPMENT`
+
+送信元アドレスとテスト送信先（テストFAX番号・テストメール）を1行（有効行 `is_active=1`）で一元管理する **単独マスタ** `m_send_config`。他テーブルと直接のリレーション（FK）を持たない。CommonModule の `ISendConfigService` が有効行を読み取り、投入側（`dispatch-monitoring-consolidation`）が From／テスト送信時の recipient 上書きに使用する。spec: `send-config-master`。
+
+```mermaid
+erDiagram
+    m_send_config {
+        int id PK
+        nvarchar from_address
+        nvarchar test_fax_number
+        nvarchar test_email
+        bit is_active
+        datetime2 created_at
+        datetime2 updated_at
+        rowversion row_version
+    }
+```
+
+> `m_send_config` は送信元・テスト宛先を保持する単独マスタで、他テーブルとリレーションを持たない（独立）。有効行は `is_active=1` を1件採用（1行運用・将来複数化余地）。`row_version` は管理画面編集の楽観的ロック用。
+
+---
+
 ## リレーション一覧
 
 ### マスタ間
@@ -228,3 +252,9 @@ erDiagram
 | t_print_queue | 共通印刷キュー | トランザクション | 全モジュール横断の印刷ジョブ。1レコード=1印刷ジョブ。FAX列なし。`t_smtp_queue` と対 |
 | m_print_agent_control | PrintAgent死活監視 | マスタ | 印刷Worker生存状態(heartbeat)表示（独立・リレーションなし）。`m_smtp_agent_control` と対 |
 | m_printer | プリンタマスタ | マスタ | インストール済みプリンタ台帳。PrintAgent が起動時に列挙し upsert（独立・リレーションなし。一意 (machine_name, printer_name)） |
+
+## 共通DB（db_common_dev）テーブル分類 — 送信設定マスタ
+
+| テーブル名 | 日本語名 | 区分 | 主用途 |
+|-----------|----------|------|--------|
+| m_send_config | 送信設定マスタ | マスタ | 送信元アドレス・テスト送信先(FAX/メール)を1行で一元管理（独立・リレーションなし）。ISendConfigService が参照、投入側が From/recipient 上書きに使用 |

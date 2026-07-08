@@ -68,19 +68,19 @@
   - Ensure all tests pass, ask the user if questions arise.
   - ビルド／テスト実行はユーザー側。ここまでで entity・パス解決サービス・PrintJobService 改修が整合していることを確認する。
 
-- [ ] 5. 旧監視画面の廃止・参照コード撤去
-  - [ ] 5.1 `Material_SmtpMonitor` 削除 + FAX 参照コード撤去
+- [x] 5. 旧監視画面の廃止・参照コード撤去
+  - [x] 5.1 `Material_SmtpMonitor` 削除 + FAX 参照コード撤去
     - `MaterialModule/Areas/Material/Pages/SmtpMonitor/Index.cshtml(.cs)` を削除（旧名残 `FaxMonitor/` があれば併せて整理）
     - 廃止に伴い不要になった `t_order_reports.fax_status`／`fax_at`／`fax_error_message` 参照コードを MaterialModule から除去
     - _Requirements: 3.1, 3.3, 2.1_
 
-  - [ ] 5.2 `Material_PrintMonitor` 削除 + 印刷監視参照コード撤去
+  - [x] 5.2 `Material_PrintMonitor` 削除 + 印刷監視参照コード撤去
     - `MaterialModule/Areas/Material/Pages/PrintMonitor/Index.cshtml(.cs)` を削除
     - 廃止に伴い不要になった `t_order_reports.print_status`／`PrintPayload`／`PrintAgentControls` 参照コードを MaterialModule から除去
     - _Requirements: 5.1, 5.3_
 
-- [ ] 6. 導線（ナビゲーション）解除 SQL
-  - [ ] 6.1 `dbAuthTest` の `m_content`/`r_content_auth` 解除 SQL を作成
+- [x] 6. 導線（ナビゲーション）解除 SQL
+  - [x] 6.1 `dbAuthTest` の `m_content`/`r_content_auth` 解除 SQL を作成
     - `MaterialModule/docs/sql/` に `register_smtp_monitor_content.sql` と対の「解除 SQL」を新規作成（対象 DB: dbAuthTest）
     - `area='Material' AND page='SmtpMonitor/Index'` および `area='Material' AND page='PrintMonitor/Index'` の `m_content` 行と関連 `r_content_auth` を除去（FAX 監視→`/Common/SmtpMonitor`、印刷監視→`/Common/PrintMonitor` へ集約）
     - 実行はユーザー側（`/Common/*` の登録は CommonModule 側 spec 所有）。MainWeb・AuthModule ソースは変更しない
@@ -117,8 +117,8 @@
   - Ensure all tests pass, ask the user if questions arise.
   - 旧画面削除・参照撤去後もビルドが通り、Property 1〜3 と例示／統合テストが成立していることを確認する。
 
-- [ ] 9. カットオーバー協調（③投入先切替）
-  - [ ] 9.1 カットオーバー協調ノートの反映（doc/spec-sync）
+- [x] 9. カットオーバー協調（③投入先切替）
+  - [x] 9.1 カットオーバー協調ノートの反映（doc/spec-sync）
     - `print-platform` R11 の「③投入先切替」への追随として、残ジョブ（旧 `t_order_reports.print_status ∈ {1,2}`）分の `pdf_path` 生成手順（`IOrderPdfService`＋`IPrintOutputPathService` 資産で PDF 生成・保存）を design.md「カットオーバー協調」章に整合させ、切替順序（③投入側＝本 spec と ④読取先＝print-platform の近接実施）・可逆性（旧構成へ戻せる）を明記
     - 実行手順詳細・DDL・移行は `print-platform` 所有（ユーザー実施）。本タスクはドキュメント整合のみ（コード変更なし）
     - _Requirements: 4.7_
@@ -144,6 +144,7 @@
     - _Requirements: 4.2, 4.5, 8.1_
 
 - [ ] 11. FAX送信の config_key 選定と承認画面テスト送信（R10）
+  > **【改訂 2026/07/08：現行実装＝recipient 上書き方式】** 本タスク群の記述（config_key を `fax`/`test-fax` から選定・`TestConfigKey`・宛先を上書きしない）は取り下げ。**現行（実装 `ab31934`）は config_key 常に `fax`＋テスト時 recipient を `m_send_config.test_fax_number` に上書き・From=`m_send_config.from_address`（`ISendConfigService`）**。`FaxDispatchOptions.TestConfigKey` は廃止。11.1〜11.4 の `[x]` は履歴として維持（実装は本ノートが正）。テスト宛先/From の管理は spec `send-config-master` 所有。
   - [x] 11.1 `FaxDispatchOptions` を改修（config_key 選定・テスト設定廃止）
     - `MaterialModule/Configuration/FaxDispatchOptions.cs` から `TestSendEnabled`・`TestFaxNumber`・`ConfigKey`（`"Material"` 固定）を削除
     - `NormalConfigKey`（既定 `"fax"`）・`TestConfigKey`（既定 `"test-fax"`）を追加。`FromAddress` は継続保持
@@ -168,6 +169,7 @@
     - _Requirements: 10.2, 10.5, 10.7_
 
   - [ ]* 11.5 Property 4 プロパティテスト（config_key 選定・宛先非上書き）
+    > **【改訂 2026/07/08：Property 反転】** 現行は「configKey は常に `fax`、testSend 時は recipient=`m_send_config.test_fax_number` に**上書きあり**（未設定はスキップ）、From=`m_send_config.from_address`」を検証する（旧「test-fax/fax 選定・宛先上書きなし」は無効）。design「Property 4」改訂ノート参照。
     - **Property 4: FAX投入の config_key はテスト送信指定に一致し宛先は上書きされない**
     - **Validates: Requirements 10.1, 10.3, 10.4, 10.6**
     - `testSend`（true/false）＋FAX対象を含む発注集合を生成し、`ISmtpQueueService.EnqueueAsync` の `configKey` が `test-fax`/`fax` に一致・宛先が実FAX番号のまま（上書きなし）を検証。`ISmtpQueueService` はモック。タグ: `Feature: dispatch-monitoring-consolidation, Property 4`・最低 100 回反復
@@ -187,6 +189,7 @@
 - 本 spec 由来の変更は MainWeb・AuthModule・SharedCore・PrintAgent に差分を出さない（毎セッション確認）。
 - タスク群 10 は、投入側 OutputType ゲート化（印刷キュー投入を `OutputType ∈ {1,3}` に限定）と `EnqueueAsync` からの `outputType` 引数除去への追随（新Print仕様）である。既存タスク 3.2 は投入契約改定前に実装・コミット済み（全グループ投入・`outputType` 受け渡し）であり、タスク群 10 がこれを是正する。既存の完了タスク（`[x]`）は変更しない。
 - タスク群 11 は FAX送信の config_key 選定（本番 `fax`／テスト `test-fax`・旧 `Material` 廃止）と承認画面「FAXテスト送信」チェック（ジョブ単位・非共有・競合回避）への対応（R10）。`FaxDispatchOptions` の `TestSendEnabled`/`TestFaxNumber`/`ConfigKey` を廃止し、`DispatchEnqueueService`/`ApprovalService` に testSend/faxTestSend を通す。SmtpAgent の宛先解決3モードの実挙動は別 spec `smtp-sender` タスク15 が所有する。`IDispatchEnqueueService`/`IApprovalService` の内部シグネチャ変更を伴う（MaterialModule 内で完結）。
+  - **【改訂 2026/07/08：現行実装に追随】** 上記「config_key を `fax`/`test-fax` から選定・`TestConfigKey`」は取り下げ。現行実装（`ab31934`）は **config_key 常に `fax`＋テスト時 recipient を `m_send_config.test_fax_number` に上書き・From=`m_send_config.from_address`（`ISendConfigService` 取得）**。テスト宛先値・From の管理は spec `send-config-master` が所有。`smtp-sender` の固定宛先(test-fax)モードには依存しない（2モード＝`fax`/`mail`）。
 
 ## Task Dependency Graph
 

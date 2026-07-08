@@ -2,6 +2,15 @@
 
 smtp-sender（SMTP送信汎用基盤）
 
+> ## 🔴 改訂ノート（2026/07/08：テスト送信＝固定宛先(test-fax)方式の取り下げ）
+>
+> 本設計書中に記述される「**固定宛先モード(test-fax)** による送信」および「`config_key=test-fax` を指定してテスト送信する」方式は**取り下げ済み**である。以下を正とする（本文中の該当記述＝送信モード3分岐の「固定宛先」・`ResolveToAddress` の③固定宛先・シーケンス図の固定宛先分岐・XMLコメントの test-fax 記述 等は履歴として残置するが**無効**）。
+>
+> - **運用する送信モードは メール直送 / FAX送信 の2モード**（`fax_domain` 空=メール直送／`@`始まりドメイン=FAX送信）を正とする。固定宛先（完全アドレス）モードは非推奨・未使用（`ResolveToAddress` の当該分岐は SmtpAgent に残存するが投入側から選択されない・撤去は任意）。
+> - **テスト送信は recipient 上書き方式**に統一：`config_key` は本番と同じ `fax`(FAX)／`mail`(メール)のまま、投入側が宛先を送信設定マスタ `m_send_config` の `test_fax_number`／`test_email` に差し替える。
+> - テスト宛先値の管理・上書き処理・「ジョブ単位・非共有・競合回避」の担保は spec **`send-config-master`** および **`dispatch-monitoring-consolidation`** が所有する（本 spec smtp-sender はテスト宛先値を保持しない）。
+> - `m_smtp_config` の `test-fax` 行は残置可だが運用対象外。
+
 ## Overview
 
 本設計は、資材調達システム(MaterialModule)で動作実証済みの「メールtoFAX送信(SmtpAgent)」を、全社共通の**SMTP送信汎用基盤**へ発展させるための技術設計を定義する。

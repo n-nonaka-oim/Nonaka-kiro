@@ -301,6 +301,7 @@
     - _Requirements: （プロジェクトルール: Spec 2箇所配置）_
 
 - [ ] 15. config_key 3モード化（メール直送/FAX送信/固定宛先）とテスト送信の固定宛先方式
+  > **【改訂 2026/07/08：固定宛先(test-fax)方式は取り下げ・非推奨】** テスト送信は recipient 上書き方式（`config_key` は `fax`/`mail` のまま、宛先を `m_send_config` のテスト宛先へ差し替え）に変更。正の所有は spec `send-config-master`／`dispatch-monitoring-consolidation`。本タスク群 15.1〜15.7 の成果（`ResolveToAddress` 3モード・`test-fax` 行）は履歴として残置（`[x]` 維持）するが、固定宛先モードは**投入側から選択されない**（コード撤去＝SmtpAgent の IsFullAddress 分岐撤去は任意・別 Unit）。運用する送信モードは メール直送/FAX送信 の2モードを正とする。
   - [x] 15.1 m_smtp_config 例データ更新＋旧 config_key 廃止スクリプト
     - `CommonModule/docs/sql/` に m_smtp_config の運用行（`mail`: fax_domain 空 / `fax`: `@faxmail.com` / `test-fax`: `0064871033@faxmail.com`）の INSERT/UPSERT と、旧 `Material`・`test` 行の DELETE スクリプトを作成（存在ガード付き・実行はユーザーが `db_common_dev` に対して行う旨をコメント明記）
     - _Requirements: 2.4, 2.5, 2.6, 2.7, 8.6_
