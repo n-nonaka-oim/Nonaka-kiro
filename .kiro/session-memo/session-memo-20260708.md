@@ -62,6 +62,28 @@
 - 実装が spec 先行。smtp-sender/dispatch spec はまだ「test-fax 方式」記述のまま → 次回 spec 再改訂で整合させる。
 - SmtpAgent は test-fax(IsFullAddress) が残存するが、投入側が test-fax config_key を使わなくなったため実害なし（撤去は任意）。
 
+---
+
+## 🔴 チェックポイント（コンテキスト80%・新セッション引継ぎ）
+
+### 現在地（送信設定マスタ化＝Unit1-4 実装完了・コミット済み）
+- **Unit4 管理画面まで完了**。「送信元・テスト宛先を画面で可視・編集（属人化回避）」の本体が動作。
+- コミット（07/08）: CommonModule `f687e13`(m_send_config) / `0d54cc5`(ISendConfigService) / `30e9396`(管理画面 /Common/SendConfig＋register SQL)。MaterialModule `ab31934`(DispatchEnqueue recipient上書き)。Nonaka memo `97dab9c`。
+- 管理画面: `CommonModule/Areas/Common/Pages/SendConfig/Index.cshtml(.cs)`。有効行(is_active=1)を1件編集/無ければ新規。EmailAddress 検証・row_version 楽観ロック（競合時「他のユーザーが先に更新しました。画面を再読み込みしてください。」）。
+
+### 🟡 次アクション（新セッション・優先順）
+1. **管理画面の「単発テスト送信」ボタン**（Agent疎通・使い捨て）: マスタ test_fax_number/test_email 宛に t_smtp_queue へ1件 enqueue（fax/mail）。常駐しない・ISmtpQueueService 経由。
+2. **Mail テスト経路の位置づけ確定**（発注承認は FAX のみ。Mail は上記単発テスト送信で疎通、発注書メール送信機能化は別途）。
+3. **spec 再改訂（実装先行の追随・重要）**: smtp-sender（test-fax取り下げ→mail/fax 2モード）／dispatch（R10/Comp7/Prop4 を config_key=fax＋recipientマスタ上書きに）／新規 spec（送信設定マスタ＋管理画面＋テスト送信）。
+4. SmtpAgent test-fax(IsFullAddress) 撤去（任意・無害）。
+5. **ユーザー実行**: `create_m_send_config.sql`(db_common_dev)＋`register_send_config_content.sql`(dbAuthTest) 実行・slnCoCore 再ビルド・/Common/SendConfig 編集確認・FAX承認テスト(output_type=2/3・「FAXテスト送信」ON→recipient=マスタ test_fax_number)。
+
+### テスト（git管理外・ディスク上・診断クリア）
+- MaterialModule.Tests ハーネスに StubApprovalReportPdfProvider（10.2 断解消）＋StubSendConfigService 追加。Property9 は config_key常にfax・テスト時 recipient=マスタ番号 に更新済。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260708）。次アクション＝**管理画面の単発テスト送信ボタン**→**spec 再改訂**。
+
 ## 🟡 次アクション（次回）
 1. **新規 spec 起草**（CommonModule・送信設定マスタ＋管理画面＋テスト送信 recipient上書き・fax/mail）: requirements から。Mail 送信の対象（疎通のみ or 発注書メール送信機能）を requirements で確定。
 2. smtp-sender / dispatch spec の再改訂（test-fax 取り下げ・recipient上書き方式へ）。
