@@ -36,8 +36,31 @@
 - **新規 spec**: CommonModule「送信設定マスタ＋管理画面＋テスト送信」。Mail 送信経路（何を送るか）も要定義（Mail テスト含むため）。
 - 既にコミット済みの実装（SmtpAgent 7435a26／MaterialModule 7bb1220／CommonModule dbfe065）から一部差し替え。
 
-## 本日のコミット
-- コード変更なし（要件・設計方針の確定・Q&A のみ）。本 memo 20260708 作成。
+## 本日の実装（小規模単位・実装フェーズ着手）
+- **Unit1**: 送信設定マスタ `m_send_config`（entity `MSendConfig`＋DbSet＋DDL `create_m_send_config.sql`）。列: id/from_address/test_fax_number/test_email/is_active/created_at/updated_at/row_version。1行運用・初期シード付き。→ CommonModule `f687e13`。
+- **Unit2**: `ISendConfigService`/`SendConfigService`（is_active=1 の有効行を AsNoTracking で取得）＋ AddCommonModule に Scoped 登録。→ CommonModule `0d54cc5`。
+- **Unit3**: `DispatchEnqueueService` を **recipient上書き方式**へ改修。
+  - ISendConfigService 注入。送信元 from = マスタ from_address（無ければ FaxDispatchOptions.FromAddress フォールバック）。
+  - config_key は常に `fax`（NormalConfigKey）。テスト時は recipient を `m_send_config.test_fax_number` へ上書き（未設定はスキップ+ログ）。本番は実FAX番号。
+  - `FaxDispatchOptions.TestConfigKey` 廃止（test-fax 固定宛先方式・取り下げ）。dispatch_log は recipientForSend/config_key/testSend を記録。
+  - → MaterialModule `ab31934`。診断クリア。
+- **付随**: MaterialModule.Tests の DispatchEnqueue スイートが 10.2 リファクタ（IApprovalReportPdfProvider）以降 **compile 断**だった問題を、ハーネスに `StubApprovalReportPdfProvider`（既存 StubOrderPdfService をラップし GeneratedGroups/ThrowSelector 維持＋合成パス返却）＋`StubSendConfigService` を追加して解消。Property9 を新仕様（config_key常にfax・テスト時 recipient=マスタ test番号）に更新。※テスト .cs は git 管理外・ディスク上のみ・診断クリア。
+
+## コミット（本日 07/08 実装分）
+- CommonModule `f687e13`（m_send_config）・`0d54cc5`（ISendConfigService）。
+- MaterialModule `ab31934`（DispatchEnqueue recipient上書き・FaxDispatchOptions整理）。
+- ※テストハーネス修正は git 管理外。
+
+## 残タスク（次回・優先順）
+1. **Unit4: m_send_config 管理画面**（Common Area・閲覧/編集・DbPermissionCheck・row_version 楽観ロック）＝「可視化・属人化回避」の本体。
+2. Mail テスト経路（config_key=mail＋test_email）と、管理画面の「単発テスト送信」ボタン（Agent疎通・使い捨て）。
+3. Unit5: SmtpAgent の test-fax（IsFullAddress 固定宛先モード）撤去（任意・現状は未使用で無害）。
+4. **spec 再改訂**: smtp-sender（test-fax 取り下げ・config_key は mail/fax の2モード）／dispatch（R10/Comp7/Prop4 を recipient上書き＋m_send_config に）／新規 spec（送信設定マスタ＋管理画面）。※実装先行のため spec 追随が必要。
+5. ユーザー: `create_m_send_config.sql` 実行（db_common_dev）・slnCoCore ビルド・実FAX(本番/テスト)確認。
+
+## 注意（未整合・要追随）
+- 実装が spec 先行。smtp-sender/dispatch spec はまだ「test-fax 方式」記述のまま → 次回 spec 再改訂で整合させる。
+- SmtpAgent は test-fax(IsFullAddress) が残存するが、投入側が test-fax config_key を使わなくなったため実害なし（撤去は任意）。
 
 ## 🟡 次アクション（次回）
 1. **新規 spec 起草**（CommonModule・送信設定マスタ＋管理画面＋テスト送信 recipient上書き・fax/mail）: requirements から。Mail 送信の対象（疎通のみ or 発注書メール送信機能）を requirements で確定。
