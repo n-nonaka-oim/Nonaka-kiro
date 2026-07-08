@@ -227,3 +227,83 @@
 1. ユーザー: slnCoCore ビルド確認＋各SQL適用（create_m_send_config / register_send_config_content / unregister_material_monitor_content / alter_t_print_queue_drop_output_type / create_m_printer）＋GUI動作確認。
 2. 任意PBT（send-config-master 3.3/4.4/6.2・dispatch 7.x/10.3/11.5・print-platform 12.14〜12.16）。
 3. 区切りコミット（CommonModule 送信設定/単発テスト送信・MaterialModule 旧画面削除/解除SQL・Nonaka/.kiro spec/docs/memo）。
+
+---
+
+## ビルド確認＋ビルドエラー修正（DispatchEnqueueService MSendConfig 参照）
+
+- ユーザーが slnCoCore ビルド → **エラー**: `MSendConfig が MaterialModule.Data.Entities に存在しない`（＋連鎖で MaterialModule.dll 不在）。
+- 原因: 先行コミット `ab31934` の `DispatchEnqueueService.cs` が `Data.Entities.MSendConfig?` と記述→ `MaterialModule.Data.Entities` と解決され不在（`MSendConfig` は `CommonModule.Data.Entities`）。今回削除した2ページとは無関係。
+- 修正: 当該1行を完全修飾 `CommonModule.Data.Entities.MSendConfig?` に変更（using 追加はエンティティ名衝突回避のため避け完全修飾）。診断クリア。**ユーザー再ビルド OK**。
+- コミット: MaterialModule `0501536`。
+- 既存警告（prefService 未読・Null 許容・CA1416 等）はビルドを止めない（不変）。
+
+### コミット状況（本セッション）
+- CommonModule `4e86bcf`（SendConfig 単発テスト送信ボタン）。
+- MaterialModule `2a3065c`（旧監視画面廃止＋解除SQL）／`0501536`（MSendConfig 完全修飾修正）。
+- Nonaka/.kiro `d6c10ba`（spec整合: send-config-master 新規＋smtp-sender/dispatch 再改訂＋DB定義書/ER図＋memo）。
+- ※本 memo 追記分（ビルド修正）は次コミット対象。
+
+### 残（ユーザー実行系・任意）
+- SQL 適用: create_m_send_config / register_send_config_content / unregister_material_monitor_content / alter_t_print_queue_drop_output_type / create_m_printer。
+- GUI 動作確認: /Common/SendConfig（保存・単発テスト送信）。任意PBT（send-config-master 3.3/4.4/6.2 ほか）。
+
+---
+
+## SQL 適用（ユーザー実施）＋横断資料アップデート
+
+### SQL 適用結果（ユーザー・db_common_dev / dbAuthTest）
+- ① `create_m_send_config.sql`：有効行1件シード済（from=material-noreply@example.co.jp／test_fax=06-6487-1033／test_email=test-noreply@example.co.jp・is_active=1）。
+- ② `create_m_printer.sql`：既存のためスキップ（列構成 id/machine_name/printer_name/is_default/is_active/last_seen_at/created_at/updated_at/row_version＝一致確認済）。
+- ③ `alter_t_print_queue_drop_output_type.sql`：**output_type 列削除済**。t_print_queue は14列（output_type/print_payload/fax_status 無し）＝承認→印刷投入が制約エラーなく通る状態に。
+- ④ `register_send_config_content.sql`：`/Common/SendConfig` 導線登録。**ラベルはユーザーが「SMTP送信設定」に変更**（DB実値）。→ SQLファイル側ラベルも「SMTP送信設定」に整合更新済。
+- ⑤ 旧 Material 監視の m_content は既に削除済（ユーザー確認）。
+
+### 横断資料アップデート（Kiro・直接編集）
+- `register_send_config_content.sql`：label を「SMTP送信設定」に整合。
+- `.kiro/docs/未実装案件一覧.md`：最終更新 2026/07/08 に更新。サマリ表の dispatch を「実装ほぼ完了」・send-config-master 行追加。I-3 に「test-fax 方式取り下げ」注記。**I-4 新設**（送信設定マスタ＋recipient 上書き方式の集約・コミット/spec/SQL/残作業を記録）。
+- `system-architecture.md`：該当記述なし＝更新不要と判断。
+
+### ⏳ ユーザー動作確認中
+- slnCoCore ビルド → `/Common/SendConfig` 表示・保存・単発テスト送信（FAX/Mail）→ `t_smtp_queue` に status=1 で積まれるか。SmtpAgent 停止中は待機のまま＝正常。
+
+### 未コミット（次コミット対象）
+- CommonModule: `register_send_config_content.sql`（ラベル整合）。
+- Nonaka/.kiro: `未実装案件一覧.md`・session-memo（本追記・前回ビルド修正追記分）。
+
+---
+
+## 🔴 本日のクローズ・チェックポイント（2026/07/08 終了）
+
+### 本日の成果（すべて完了）
+1. **状況整理**：session-memo の誤認（20260702 を最新と誤読）を訂正。真の最新は 20260708。実装が spec 先行のドリフトを把握。
+2. **① spec 再改訂 完了**（実装＝spec に整合）:
+   - 新規 `send-config-master`（requirements/design/tasks）作成。
+   - `smtp-sender` 改訂（test-fax 固定宛先方式 取り下げ→mail/fax 2モード・recipient 上書き注記）。
+   - `dispatch-monitoring-consolidation` 改訂（config_key 常に fax＋recipient を m_send_config へ上書き・From=マスタ・Property4 反転）。
+3. **send-config-master 実装 完了**：単発テスト送信ボタン（FAX/Mail・使い捨て enqueue・ISmtpQueueService 経由）。DB定義書/ER図に m_send_config 追記。
+4. **印刷系カットオーバー締め 完了**：旧 Material 監視画面（SmtpMonitor/PrintMonitor）削除＋導線解除SQL＋カットオーバーノート。
+5. **ビルドエラー修正**：`DispatchEnqueueService` の `MSendConfig` 参照を完全修飾（`ab31934` のバグ）。ユーザー再ビルド OK。
+6. **SQL 適用（ユーザー・db_common_dev/dbAuthTest）**：m_send_config 作成+シード／m_printer（既存）／**t_print_queue output_type 列削除**／/Common/SendConfig 導線登録（ラベル「SMTP送信設定」）。旧 Material m_content は削除済。
+7. **🟢 実機動作確認 OK**：`/Common/SendConfig` の単発テスト送信で **メール・FAX 両方の送信疎通を確認**（SmtpAgent 稼働・実送信成功）。
+8. 横断資料更新：未実装案件一覧（I-4 新設・dispatch/send-config 反映）・register SQL ラベル整合。
+
+### コミット状況（2026/07/08）
+- CommonModule: `f687e13`/`0d54cc5`/`30e9396`（送信設定マスタ基盤・既存）＋`4e86bcf`（単発テスト送信ボタン）。**未コミット**：`register_send_config_content.sql`（ラベル「SMTP送信設定」整合）。
+- MaterialModule: `ab31934`（DispatchEnqueue recipient 上書き）＋`2a3065c`（旧監視画面廃止＋解除SQL）＋`0501536`（MSendConfig 完全修飾）。
+- Nonaka/.kiro: `d6c10ba`（spec 整合＋DB定義書/ER図＋memo）。**未コミット**：`未実装案件一覧.md`・本 session-memo（ビルド修正追記＋SQL適用＋本クローズ）。
+
+### 🟡 次セッションの次アクション（優先順）
+1. **未コミット分のコミット**：CommonModule（register SQL ラベル）／Nonaka/.kiro（未実装案件一覧・memo）。※ユーザー承認のうえ実施。
+2. 任意PBT（未実装・スキップ可）：send-config-master 3.3/4.4/6.2・dispatch 7.1〜7.5/10.3/11.5・print-platform 12.14〜12.16。
+3. 残ユーザー実行系：`drop_legacy_orphan_tables_db_material_dev.sql`（J-1・破壊的）・`t_order_reports` 退役（J-2・保全後）。
+4. 次の機能開発（未実装案件一覧 G/F 等）。
+
+### 状態メモ（重要）
+- テスト送信方式＝**recipient 上書き（config_key=fax/mail のまま宛先を m_send_config のテスト宛先へ差替え）**で確定・稼働。test-fax 固定宛先方式は取り下げ（SmtpAgent の IsFullAddress 分岐は残存・無害・撤去は任意）。
+- `t_print_queue` は output_type 無しの14列（承認→印刷投入が通る）。
+- MainWeb/AuthModule/SharedCore は無改変（各機能は担当モジュール内で完結）。
+- 疎通テストで投入した使い捨てジョブ（t_smtp_queue）は status 遷移済み。残待機行の扱いは次回運用判断。
+
+### 再開合図
+「再開します、session-memoを確認」。**最新は本ファイル（20260708）**。次アクション＝未コミット分のコミット → 任意PBT or 次機能。
