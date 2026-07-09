@@ -83,3 +83,78 @@
 ### コミット状況（本日）
 - コミット済：`35fb376`/`5571c40`（前回クローズ分）・`f77a0b9`/`0a57ba9`（追加1 monitor-job-delete）。
 - 未コミット：CommonModule（send-config-master ユーザー別＋添付：MSendConfig/ISendConfigService/SendConfigService/SendConfig画面2/ALTER SQL）・Nonaka/.kiro（send-config-master spec 3・docs/db 2・本memo）。
+
+---
+
+## 🔴 中間チェックポイント（2026/07/09・すぐ再開）
+
+### 本日ここまで完了・全コミット済み
+- 前回クローズ分：CommonModule `35fb376`／Nonaka `5571c40`。
+- **追加1（監視画面 一括削除）**：spec＋実装＋ビルドOK。CommonModule `f77a0b9`／Nonaka `0a57ba9`。
+- **追加2（SendConfig ユーザー別＋添付）**：spec 改訂＋実装＋ビルドOK。CommonModule `0373178`／Nonaka `b684de7`。
+  - ⚠ 実行時前提：`alter_m_send_config_user_attachment.sql`（db_common_dev）適用済み前提（owner_user_id/attachment_path）。未適用だと EF 実行時エラー。
+- 未コミット：`.kiro/steering/Agnet.md`（無関係な steering・PrintAgent/SmtpAgent 起動コマンドのメモ）＝ユーザー判断で別途。
+
+### 現在の稼働仕様（要点）
+- 送信設定＝ユーザー別（owner_user_id）。**業務送信（発注承認FAX）は default 行（owner_user_id NULL）を採用**（GetActiveAsync が default 限定）。SendConfig 画面はログインユーザー行→無ければ default 初期表示・保存で自分用行作成。
+- 単発テスト送信＝GetForUserAsync（ユーザー行→default）＋添付（attachment_path・送信時 File.Exists 判定・不可はエラー）。
+- 監視画面（Common_Smtp/PrintMonitor）＝チェックボックス複数選択で一括削除（処理中2以外・物理削除・確認ダイアログ）。
+
+### 次アクション候補（未着手・任意）
+1. 任意PBT：monitor-job-delete 4.1/4.2（削除対象選別 Property1・例示）／send-config-master 8.6（Property2 ユーザー設定解決・添付例示）。
+2. 動作確認（ユーザー）：/Common/SendConfig ユーザー別保存・添付（存在/不存在）・監視画面一括削除。
+3. J-1：孤立3テーブル DROP（`drop_legacy_orphan_tables_db_material_dev.sql`・db_material_dev・破壊的・要バックアップ）。
+4. 次機能（未実装案件一覧 G/F 等）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。
+
+---
+
+## A. 直近3機能の残（任意PBT）着手：CommonModule.Tests に3本追加
+
+配置は `clnCoCore/CommonModule.Tests`（FsCheck 2.16.6・InMemory・一意DB名・`[Property(MaxTest=100)]`・`// Feature:` タグ）。既存 `SmtpMonitorResendPropertyTests`／`SmtpMonitorTestHelper`（TempData/PageContext スタブ）作法に踏襲。
+
+- **monitor-job-delete Property 1**（削除対象選別＝選択かつ処理中2以外のみ削除・非選択/処理中は残存）:
+  - `Pages/SmtpMonitor/SmtpMonitorDeletePropertyTests.cs`（`SmtpMonitorTestHelper.CreateModel` 再利用・`SelectedJobIds` 設定→`OnPostDeleteAsync`→残存集合 SetEquals 検証）。
+  - `Pages/PrintMonitor/PrintMonitorDeletePropertyTests.cs`（PrintMonitor 用に TempData 簡易セットアップ内包）。
+  - tasks 4.1＝[x]。4.2（未選択→エラー例示）は未（任意）。
+- **send-config-master Property 1/2**：`Services/SendConfigServicePropertyTests.cs`
+  - Property 1：`GetActiveAsync` は default 行（owner_user_id NULL・is_active=1）の最小 id または null（default 限定）。tasks 3.3＝[x]。
+  - Property 2：`GetForUserAsync("u1")` はユーザー行→無ければ default→無ければ null。tasks 8.6＝[x]（添付の PageModel 例示は未／任意）。
+  - `SendConfigService` は internal だが CommonModule.Tests に InternalsVisibleTo 済（既存 PrintQueueService テストと同様）で直接 new 可。
+
+### ⏳ ユーザー
+- `dotnet test CommonModule.Tests`（clnCoCore）でグリーン確認。OKなら本テスト3本をコミット（clnCoCore）。
+- ※テスト .cs は clnCoCore 配下（git 管理はユーザー側の運用に従う）。
+
+### A 残（未着手・任意）
+- monitor-job-delete 4.2（未選択→エラー例示）。
+- send-config-master 4.4（画面例示）・6.2（単発送信例示）・添付 PageModel 例示。
+- dispatch-monitoring-consolidation 2.2/7.1〜7.5/10.3/11.5（MaterialModule.Tests・別プロジェクト）。
+- print-platform 12.14/12.15/12.16（CommonModule.Tests）。
+- 各 CP はユーザーの `dotnet test`。
+
+### 未コミット
+- clnCoCore/CommonModule.Tests：SmtpMonitorDeletePropertyTests・PrintMonitorDeletePropertyTests・SendConfigServicePropertyTests（3本）。
+- Nonaka/.kiro：monitor-job-delete/send-config-master tasks 進捗・本memo。
+
+---
+
+## dotnet test CommonModule.Tests 実行（Kiro・ユーザー明示指示）＝グリーン
+
+- 初回：**既存テストが output_type 廃止に未追随でコンパイル失敗**（8エラー）。`TPrintQueue.OutputType` 参照＋旧 `EnqueueAsync`（outputType 位置引数）残存。これは print-platform 12.15 の未処理分。
+- 修正（clnCoCore/CommonModule.Tests）：
+  - `Services/PrintQueueServicePropertyTests.cs`：EnqueueInput/InvalidEnqueueInput から OutputType 除去、Generator 追随、`EnqueueAsync` を新シグネチャ（module/reportType/referenceCode/pdfPath/printerName/copies）に、OutputType 検証ブロック除去。
+  - `Pages/PrintMonitor/PrintMonitorSummary/Filter/Reprint`・`Integration/PrintQueueConcurrency` の `TPrintQueue { OutputType = 1 }` を除去。
+- 再実行：**合計21・成功20・スキップ1（Integration＝SQL Server 前提）・失敗0**。今回追加3クラス（SmtpMonitorDelete/PrintMonitorDelete/SendConfigService）含め全緑。
+- print-platform tasks 12.15＝[x]（既存テスト追随＋是正）。
+
+### 未コミット（clnCoCore/CommonModule.Tests）
+- 新規：SmtpMonitorDeletePropertyTests・PrintMonitorDeletePropertyTests・SendConfigServicePropertyTests。
+- 是正：PrintQueueServicePropertyTests・PrintMonitor(Summary/Filter/Reprint)・Integration(PrintQueueConcurrency)。
+- ＋ Nonaka/.kiro（monitor-job-delete/send-config-master/print-platform tasks 進捗・本memo）。
+
+### 次アクション
+- clnCoCore のテスト変更をコミット（ユーザー承認後）。
+- A 残：dispatch(MaterialModule.Tests) 7.x/10.3/11.5・print-platform 12.14/12.16・send-config 4.4/6.2 例示。

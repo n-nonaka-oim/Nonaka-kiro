@@ -39,7 +39,7 @@ design.md に基づき、Common_SmtpMonitor（`/Common/SmtpMonitor`）と Common
   - ビルド／テスト実行はユーザー側。両画面で選択→確認→削除→件数メッセージ→一覧最新化の一連が整合していることを確認する。
 
 - [ ]* 4. 削除対象選別のプロパティテスト
-  - [ ]* 4.1 Property 1: 削除対象選別は「選択かつ 処理中(2) 以外」と一致する
+  - [x]* 4.1 Property 1: 削除対象選別は「選択かつ 処理中(2) 以外」と一致する（Smtp/Print 両監視画面で実装）
     - **Property 1: 削除対象選別は「選択かつ 処理中(2) 以外」と一致する**
     - **Validates: Requirements 1.2, 1.3, 2.2, 2.3, 3.1, 3.2**
     - `CommonModule.Tests`（InMemory）：ジョブ集合（Id×status 1/2/3/9）＋選択Id集合を生成し、`OnPostDeleteAsync` 後に「選択かつ status≠2（Print は print_status≠2）」のみ削除・他は不変を検証。`// Feature: monitor-job-delete, Property 1` タグ・100反復以上

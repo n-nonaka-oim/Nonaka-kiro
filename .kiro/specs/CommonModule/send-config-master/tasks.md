@@ -41,7 +41,7 @@ design.md に基づき、CommonModule（全社共通送信基盤・対象DB `db_
     - `CommonModule/Extensions/CommonModuleExtensions.cs` に `AddScoped<ISendConfigService, SendConfigService>()`
     - _Requirements: 2.5_
 
-  - [ ]* 3.3 有効行選択の決定性のプロパティテスト
+  - [x]* 3.3 有効行選択の決定性のプロパティテスト（default 限定・SendConfigServicePropertyTests Property 1）
     - **Property 1: 有効行選択の決定性**
     - **Validates: Requirements 2.2, 2.3, 2.4**
     - is_active（bool）と id（連番）を持つ行集合を生成し InMemory 投入。`GetActiveAsync` が「is_active=1 の最小 id 行」または（該当なし）`null` を返すことを検証。`// Feature: send-config-master, Property 1` タグ、100反復以上（`CommonModule.Tests`）
@@ -110,7 +110,7 @@ design.md に基づき、CommonModule（全社共通送信基盤・対象DB `db_
     - `.kiro/docs/db/テーブル定義書.md`・`ER図.md` の `m_send_config` に `owner_user_id`・`attachment_path` を追記
     - _Requirements: 9.1, 10.1_
 
-  - [ ]* 8.6 Property 2（ユーザー設定解決）＋添付例示テスト
+  - [x]* 8.6 Property 2（ユーザー設定解決）＋添付例示テスト（Property 2＝SendConfigServicePropertyTests で実装。添付の PageModel 例示は未／任意）
     - **Property 2: ユーザー設定解決は「ユーザー行→無ければ default」と一致する**（`// Feature: send-config-master, Property 2`・100反復以上）
     - 添付：空→添付なし／存在→添付／不存在→enqueue せずエラー を例示（`CommonModule.Tests`）
     - _Requirements: 9.3, 9.4, 9.8, 10.3, 10.4, 10.5_

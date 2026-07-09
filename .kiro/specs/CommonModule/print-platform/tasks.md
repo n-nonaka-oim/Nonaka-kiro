@@ -257,7 +257,7 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - **Validates: Requirements 5.8, 5.9, 14.5**
     - `printer_name`（NULL/指定）× 実インストール集合を生成し、NULL→既定プリンタ・指定かつ集合に含む→当該プリンタ・指定かつ集合に含まない→印刷不可（status 9 エラー）を純粋関数で検証。`// Feature: print-platform, Property 8` タグ、100イテレーション以上（CommonModule.Tests）
 
-  - [ ]* 12.15 既存 Property テスト（1/3/7）の print_status 集合を追随更新
+  - [x]* 12.15 既存 Property テスト（1/3/7）の print_status 集合を追随更新（＋output_type 廃止に伴う既存テストの是正：PrintQueueServicePropertyTests の EnqueueAsync 新シグネチャ・OutputType 検証除去、PrintMonitor Summary/Filter/Reprint・Integration の TPrintQueue 初期化子 OutputType 除去。2026/07/09・dotnet test グリーン）
     - Property 1・3・7 の print_status 生成集合を {1,2,3,9}（0 を削除）に更新し、output_type 廃止・0=対象外 撤去に整合させる
     - _Requirements: 1.4_
 
