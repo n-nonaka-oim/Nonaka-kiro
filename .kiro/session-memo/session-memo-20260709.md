@@ -222,3 +222,25 @@
 ### 未コミット
 - clnCoCore/CommonModule.Tests：PrinterResolutionPropertyTests.cs（新規）。
 - Nonaka/.kiro：print-platform tasks 12.14＝[x]・本memo。
+
+---
+
+## CommonModule 残作業（任意PBT）続き — print-platform 12.16 m_printer upsert 統合テスト完了
+
+- コミット済：12.14 Property 8＝clnCoCore `9c52786`／Nonaka `aaa91db`。
+- 新規 `CommonModule.Tests/Integration/PrinterInventoryUpsertIntegrationTests.cs`（**12.16**）。
+  - 実 `PrinterInventoryHostedService`（PrintAgent・別ソリューション＝不参照）の upsert・自動無効化規則を副作用同一の自己完結ルーチン `RunUpsert` で再構成し、InMemory `CommonDbContext`＋CommonModule `MPrinter` で検証（一意DB名）。
+  - 例1：追加(PR-C)/更新(PR-A・is_default=1・last_seen)/退役無効化(PR-B は今回列挙に無→is_active=0)/他機(M2)不変。
+  - 例2：再実行べき等（重複追加なし）＋既定変更追随（PR-A→is_default=0, PR-B→is_default=1・last_seen=t2）。
+  - `[Fact]`×2・診断クリア。
+- `print-platform/tasks.md` 12.16＝[x]*。→ **task group 12 の 12.1〜12.16 すべて完了**（残 12 の CP は無し・実デプロイ/実DBはユーザー）。
+
+### ⏳ ユーザー
+- `dotnet test CommonModule.Tests` グリーン確認（12.14＋12.16 追加分）。
+
+### CommonModule 残（任意・次候補）
+- send-config-master 4.4（管理画面 例示）・6.2（単発送信 例示）。monitor-job-delete 4.2（未選択→エラー例示）。smtp-sender 10.2/10.3（SQL Server 前提・スキップ可）。print-platform 7.4（PrintAgent heartbeat＝別ソリューション確認）。
+
+### 未コミット（このあとコミット）
+- clnCoCore/CommonModule.Tests：PrinterInventoryUpsertIntegrationTests.cs（新規）。
+- Nonaka/.kiro：print-platform tasks 12.16＝[x]・本memo。

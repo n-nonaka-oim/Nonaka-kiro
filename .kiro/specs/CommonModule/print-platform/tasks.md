@@ -262,8 +262,9 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - Property 1・3・7 の print_status 生成集合を {1,2,3,9}（0 を削除）に更新し、output_type 廃止・0=対象外 撤去に整合させる
     - _Requirements: 1.4_
 
-  - [ ]* 12.16 m_printer upsert・自動無効化の統合テスト
+  - [x]* 12.16 m_printer upsert・自動無効化の統合テスト（`CommonModule.Tests/Integration/PrinterInventoryUpsertIntegrationTests.cs`・2026/07/09）
     - 起動時 upsert（追加・`last_seen_at` 更新）と自動無効化（当該機の今回列挙に無い行を `is_active=0`・他機は不変）を 1〜2 例で検証（実DB/InMemory）
+    - 実 `PrinterInventoryHostedService`（別ソリューション不参照）の upsert 規則を副作用同一の自己完結ルーチンで再構成し InMemory `CommonDbContext`＋`MPrinter` で検証。例1＝追加/更新/退役無効化＋他機不変、例2＝再実行べき等＋is_default 追随。診断クリア
     - _Requirements: 14.3, 14.7_
 
 ## Notes
