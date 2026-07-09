@@ -304,3 +304,31 @@
 
 ### コミット（このあと）
 - Nonaka/.kiro：commonmodule-distribution spec 3点＋本memo。
+
+---
+
+## commonmodule-distribution 実装（tasks 1〜5 完了）
+
+### クローン先の制約（重要）
+- ユーザー指定の `\\OJIADM23120073\Labs\web\asp\CoCore\clnCommonModule` は**Kiro のワークスペース許可外**（許可＝`CoCore\Nonaka` と `WindowsService` のみ）。`list_directory` で `CoCore` 直下が "Access denied: File access is restricted to workspace"。→ 案1採用：**正本リポジトリ `\\...\Nonaka\CommonModule`（origin GitHub と同一・許可内）に作成**。clnCommonModule はユーザーが clone/pull で取得すれば docs が入る（単一正本維持）。
+
+### 作成物（CommonModule リポジトリ・別 Git origin GitHub）
+- `README.md`（一次導線：概要・共有モデルA・クイックスタート・依存前提・フォルダ配置規約・関連リンク・Non-Goals）
+- `docs/USAGE.md`（配置規約図・ProjectReference例・AddCommonModule＋CommonDb例・DB準備・導線登録・動作確認・トラブルシュート表）
+- `docs/README.md`（既存に**SQL索引・適用順表8ステップ**＋新規不要スクリプト注記を追記）
+- `CONTRIBUTING.md`（main保護・feature/PR・Pull/Push・モデルAのバージョン非固定注意・breaking＋CHANGELOG必須）
+- `CHANGELOG.md`（公開契約定義：AddCommonModule/CommonDb・各サービス署名・ページURL・DBスキーマ／Unreleased＋初版）
+- コード・スキーマ・csproj は不変更（文書のみ）。
+- tasks 1〜5＝[x]。残 6（新規消費者ドライラン＝ユーザー）。
+
+### コミット（このあと）
+- CommonModule リポジトリ（Nonaka\CommonModule）：README/USAGE/CONTRIBUTING/CHANGELOG/docs README。※Push はユーザー承認後・CONTRIBUTING のブランチ運用に従う。
+- Nonaka/.kiro：tasks 1〜5＝[x]・本memo。
+
+### 次アクション
+- ユーザー：CommonModule リポジトリの docs をレビュー → push（origin）→ 必要なら `CoCore\clnCommonModule` に clone/pull。tasks 6 ドライラン。
+- 未着手候補：`agent-service-manager`（Windows 管理アプリ・OSレベル start/stop/install）spec 起草。
+
+### クローンフォルダ命名（cln 接頭辞・ユーザー指示）
+- 他モジュール（clnCoCore/clnDemoModule）に合わせ、消費者のクローン先を **`clnCommonModule`**（cln 接頭辞）に統一。README/USAGE/design の配置図・ProjectReference例・クローン例（`git clone ... clnCommonModule`）を更新。
+- `CommonModule.csproj` の `..\clnCoCore\SharedCore` は「clnCoCore の兄弟であること」だけに依存＝クローン名 `clnCommonModule` でも解決（csproj ファイル名は不変）。

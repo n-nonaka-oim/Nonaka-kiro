@@ -43,7 +43,7 @@ flowchart LR
   subgraph Consumer[消費者（他開発者）のワークスペース]
     C0[workspace-root]
     C1[clnCoCore\SharedCore\n（消費者が用意＝責務外）]
-    C2[CommonModule\n（クローン）]
+    C2[clnCommonModule\n（クローン・cln 接頭辞）]
     C3[消費者ホスト（MainWeb 相当）]
     C0 --- C1
     C0 --- C2
@@ -56,20 +56,20 @@ flowchart LR
 ```
 
 要点:
-- 消費者は `CommonModule` を **`clnCoCore` フォルダの兄弟**としてクローンする（`..\clnCoCore\SharedCore` が解決するため）。
+- 消費者は本リポジトリを **`clnCommonModule`（cln 接頭辞）** フォルダにクローンし、**`clnCoCore` の兄弟**に置く（`..\clnCoCore\SharedCore` が解決するため。他モジュール `clnCoCore`/`clnDemoModule` と命名を揃える）。
 - SharedCore（`clnCoCore\SharedCore`）は**消費者が用意**する（本 spec 対象外）。
 - 消費者ホスト（MainWeb 相当）が `CommonModule.csproj` を ProjectReference し、`AddCommonModule` で登録する。
 
 ## フォルダ配置規約（相対パス参照の解決）
 
-`CommonModule.csproj` は `..\clnCoCore\SharedCore\SharedCore.csproj` を参照する。したがって相対パスが壊れない**標準レイアウト**は次のとおり。
+`CommonModule.csproj` は `..\clnCoCore\SharedCore\SharedCore.csproj` を参照する。したがって相対パスが壊れない**標準レイアウト**は次のとおり（クローンフォルダは他モジュールと同じ `cln` 接頭辞 `clnCommonModule`）。
 
 ```
 <workspace-root>\
 ├── clnCoCore\
 │   └── SharedCore\
 │       └── SharedCore.csproj      ← 消費者が用意（責務外）
-└── CommonModule\                  ← このリポジトリをクローン（clnCoCore と同階層）
+└── clnCommonModule\               ← このリポジトリをクローン（clnCoCore と同階層・cln 接頭辞）
     ├── CommonModule.csproj        →  ..\clnCoCore\SharedCore\SharedCore.csproj
     ├── Areas\Common\Pages\...
     ├── Extensions\CommonModuleExtensions.cs
@@ -77,7 +77,7 @@ flowchart LR
 ```
 
 規約:
-- **必須**: `CommonModule` は `clnCoCore` と同一の親フォルダ（workspace-root）直下に置く。
+- **必須**: クローンフォルダ `clnCommonModule` は `clnCoCore` と同一の親フォルダ（workspace-root）直下に置く。命名は他モジュール（`clnCoCore`/`clnDemoModule`）と揃え `cln` 接頭辞とする（`CommonModule.csproj` のファイル名は変更しない）。
 - 消費者ホストプロジェクトは任意の場所でよいが、`CommonModule.csproj` への ProjectReference は相対/絶対いずれでも可（ホスト→CommonModule のパスは消費者裁量）。
 - 推奨と異なる配置にした場合、`..\clnCoCore\SharedCore` が解決できずビルド不能になる旨を README に明記（対処＝標準配置に合わせる）。
 - 本 spec では `CommonModule.csproj` の SharedCore 参照は**変更しない**（供給は消費者責務）。
