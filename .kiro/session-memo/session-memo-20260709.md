@@ -266,3 +266,14 @@
 ### 未コミット（このあとコミット）
 - clnCoCore/CommonModule.Tests：SendConfigPageTests.cs・SmtpMonitorDeleteExampleTests.cs・PrintMonitorDeleteExampleTests.cs（各新規）。
 - Nonaka/.kiro：send-config-master/monitor-job-delete tasks・本memo。
+
+---
+
+## dotnet test CommonModule.Tests 実行（Kiro・ユーザー指示）＝グリーン
+
+- `dotnet test CommonModule.Tests`（clnCoCore）＝**合計44・成功43・失敗0・スキップ1**（スキップ＝`PrintQueueConcurrencyIntegrationTests`・SQL Server db_common_dev 前提／環境変数 `PRINT_PLATFORM_IT_CONN` 設定時のみ・想定どおり）。
+- 本セッション追加分（PrinterResolution Property 8×4／PrinterInventoryUpsert×2／SendConfigPage 管理画面6＋単発送信5／Smtp・PrintMonitorDeleteExample 各3）を含め全緑。ビルドも成功。
+- コミット済：clnCoCore `9c52786`/`fee19de`/`7823f28`、Nonaka `aaa91db`/`e2d8889`/`4d0ddb7`。
+
+### CommonModule 任意PBT ＝実装可能分は完了
+- 残は環境前提のみ：smtp-sender 10.2/10.3（SQL Server）・print-platform 7.4（PrintAgent heartbeat＝別ソリューション）。次セッションは別作業 or これら環境依存項目。
