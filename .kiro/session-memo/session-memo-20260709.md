@@ -158,3 +158,67 @@
 ### 次アクション
 - clnCoCore のテスト変更をコミット（ユーザー承認後）。
 - A 残：dispatch(MaterialModule.Tests) 7.x/10.3/11.5・print-platform 12.14/12.16・send-config 4.4/6.2 例示。
+
+---
+
+## 🔴 本日のクローズ・チェックポイント（2026/07/09 終了・新セッションで残作業）
+
+### 本日完了・全コミット済み
+- 前回クローズ分：CommonModule `35fb376`／Nonaka `5571c40`。
+- **追加1（監視画面 一括削除）**：spec＋実装＋ビルドOK。CommonModule `f77a0b9`／Nonaka `0a57ba9`。
+- **追加2（SendConfig ユーザー別＋添付）**：spec 改訂＋実装＋ビルドOK。CommonModule `0373178`／Nonaka `b684de7`。
+  - ⚠ 実行時前提：`alter_m_send_config_user_attachment.sql`（db_common_dev）適用済み（owner_user_id/attachment_path）。
+- **A 任意PBT＋既存テスト是正**：`dotnet test CommonModule.Tests`＝**21件 全緑（成功20/スキップ1/失敗0）**。clnCoCore `45776a9`／Nonaka `a182c3f`。
+  - 追加：SmtpMonitorDelete・PrintMonitorDelete・SendConfigService の PBT。
+  - 是正：output_type 廃止に未追随だった既存テスト（PrintQueueServicePropertyTests・PrintMonitor Summary/Filter/Reprint・Integration）＝print-platform 12.15。
+
+### 現在の機能到達（要点）
+- 送信設定＝ユーザー別（owner_user_id・NULL=default）。**業務送信は default 採用**（GetActiveAsync が default 限定）。単発テスト送信は GetForUserAsync（ユーザー行→default）＋添付（attachment_path・送信時 File.Exists 判定）。
+- 監視画面（Common_Smtp/PrintMonitor）＝複数選択で一括削除（処理中2以外・物理削除・確認ダイアログ）。
+- print-platform／dispatch／send-config／monitor-job-delete のコアは実装・テスト緑・実機疎通（メール/FAX）まで確認済み。
+
+### 🟡 新セッションの残作業（A の残・任意PBT／その他）
+1. **A 残（任意PBT・スキップ可）**：
+   - send-config-master：4.4（画面例示）・6.2（単発送信例示）・添付の PageModel 例示。
+   - monitor-job-delete：4.2（未選択→エラー例示）。
+   - print-platform：12.14（プリンタ解決の決定性 Property8）・12.16（m_printer upsert 統合）。
+   - dispatch-monitoring-consolidation：2.2・7.1〜7.5・10.3・11.5（**MaterialModule.Tests**・別プロジェクト。11.5 は recipient 上書き新仕様で）。
+2. **ユーザー動作確認**：/Common/SendConfig（ユーザー別保存・添付 存在/不存在）・監視画面一括削除。
+3. **B ユーザー実行系**：J-1 孤立3テーブル DROP（`drop_legacy_orphan_tables_db_material_dev.sql`・破壊的）／J-2（保全後）。
+4. **未コミット**：`.kiro/steering/Agnet.md`（PrintAgent/SmtpAgent 起動コマンドの steering・無関係）＝ユーザー判断。
+5. **E 将来機能**（未実装案件一覧）：G 計画単価・実績対比／F 所要計算・発注点自動計算／D タンク仕上げ／C-1 用途1 UI／Excelインポート／HULFT 連携。
+
+### 運用メモ（継続）
+- spec ワークフロー用サブエージェントは IDE クラッシュ（i.map is not a function）を誘発 → **spec は直接編集**。
+- ビルド/テストはユーザー側が既定（明示指示時のみ Kiro 実行）。MainWeb/AuthModule/SharedCore 不変更。テスト＝clnCoCore/CommonModule.Tests・MaterialModule.Tests。
+- パスは小文字 `ojiadm23120073`。1ターン1タスク・80%接近で区切り。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。次アクション候補＝A 残の任意PBT（print-platform 12.14 or send-config 例示が軽め／dispatch は MaterialModule.Tests で重め）。
+
+---
+
+## 追加着手：CommonModule 残作業（任意PBT）— print-platform 12.14 Property 8 実装完了
+
+### 経緯
+- G-1（原材料 計画単価・計画数量）は要件ヒアリング途中で保留（月単位で品目×年月の計画テーブル新設＋実績対比＝購入(入庫)実績×出庫実績で影響額、という方向まで確定）。**MaterialModule は後回し**にユーザー指示。
+- CommonModule の未実装・残作業から着手。4 spec の tasks を精査：コア実装はほぼ完了、残るは主に**任意PBT（`*`）とユーザー実行チェックポイント**。純粋な未実装コアは print-platform 7.4（PrintAgent heartbeat 確認・維持）のみ。
+
+### 実装（clnCoCore/CommonModule.Tests・直接編集）
+- 新規 `Pages/PrintMonitor/PrinterResolutionPropertyTests.cs`（**Property 8 プリンタ解決の決定性**）。
+  - 実 `PrintJobWorker`（PrintAgent・別ソリューション＝不参照）の D8 解決規則を**自己完結の純粋モデル** `ResolvePrinter(printerName, defaultPrinter, installed)` として定義（Property 7 テストと同方針）。
+  - 規則：`printer_name ?? 既定`／解決空→ErrorNoPrinter／指定かつ実インストール集合に無→status=9(ErrorNotInstalled・既定退避なし)／NULL時は既定を存在チェックせず使用／OrdinalIgnoreCase。
+  - プロパティ4本：(a) NULL→既定で印刷（存在チェックなし）、(b) 指定かつ実在→当該プリンタ、(c) 指定かつ非実在→既定退避せず status=9、(d) 決定性＋大文字小文字非依存。`[Property(MaxTest=100)]`・`// Feature: print-platform, Property 8` タグ。
+  - 診断クリア。
+- `print-platform/tasks.md` 12.14＝[x]*。
+
+### ⏳ ユーザー
+- `dotnet test CommonModule.Tests`（clnCoCore）でグリーン確認。OKなら本テスト1本をコミット。
+
+### CommonModule 残（任意・次候補）
+- print-platform 12.16（m_printer upsert・自動無効化 統合テスト）／7.4（PrintAgent heartbeat 確認・維持＝別ソリューション）。
+- send-config-master 4.4/6.2（例示）。monitor-job-delete 4.2（未選択→エラー例示）。smtp-sender 10.2/10.3（統合・SQL Server 前提）。
+
+### 未コミット
+- clnCoCore/CommonModule.Tests：PrinterResolutionPropertyTests.cs（新規）。
+- Nonaka/.kiro：print-platform tasks 12.14＝[x]・本memo。

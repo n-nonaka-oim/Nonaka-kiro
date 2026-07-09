@@ -252,10 +252,11 @@ design.md に基づき、共通プリント基盤を段階的に実装する。S
     - 当該機（machine_name）の今回列挙に無い行は `is_active=0` に自動無効化する。他機（別 machine_name）の行は変更しない
     - _Requirements: 14.3, 14.4, 14.6, 14.7_
 
-  - [ ]* 12.14 プリンタ解決の決定性のプロパティテスト
+  - [x]* 12.14 プリンタ解決の決定性のプロパティテスト（`CommonModule.Tests/Pages/PrintMonitor/PrinterResolutionPropertyTests.cs`・2026/07/09）
     - **Property 8: プリンタ解決の決定性**
     - **Validates: Requirements 5.8, 5.9, 14.5**
     - `printer_name`（NULL/指定）× 実インストール集合を生成し、NULL→既定プリンタ・指定かつ集合に含む→当該プリンタ・指定かつ集合に含まない→印刷不可（status 9 エラー）を純粋関数で検証。`// Feature: print-platform, Property 8` タグ、100イテレーション以上（CommonModule.Tests）
+    - 実 `PrintJobWorker`（D8）を副作用なく自己完結モデル化（別ソリューション不参照・Property 7 テストと同方針）。NULL 時の既定プリンタは存在チェックせず／指定かつ非実在は既定へ退避せず status=9／決定性＋OrdinalIgnoreCase を検証。診断クリア
 
   - [x]* 12.15 既存 Property テスト（1/3/7）の print_status 集合を追随更新（＋output_type 廃止に伴う既存テストの是正：PrintQueueServicePropertyTests の EnqueueAsync 新シグネチャ・OutputType 検証除去、PrintMonitor Summary/Filter/Reprint・Integration の TPrintQueue 初期化子 OutputType 除去。2026/07/09・dotnet test グリーン）
     - Property 1・3・7 の print_status 生成集合を {1,2,3,9}（0 を削除）に更新し、output_type 廃止・0=対象外 撤去に整合させる
