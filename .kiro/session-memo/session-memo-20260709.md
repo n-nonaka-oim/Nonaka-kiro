@@ -277,3 +277,30 @@
 
 ### CommonModule 任意PBT ＝実装可能分は完了
 - 残は環境前提のみ：smtp-sender 10.2/10.3（SQL Server）・print-platform 7.4（PrintAgent heartbeat＝別ソリューション）。次セッションは別作業 or これら環境依存項目。
+
+---
+
+## 新規 spec 起草：commonmodule-distribution（CommonModule クローン配布の整備）
+
+### 経緯・確定事項（ユーザー）
+- 環境依存の残タスクは実益薄と判断 → CommonModule の新規テーマへ。3案（機能追加/クローン化/Agent起動停止のWinアプリ管理）を提案。
+- 起動/停止＝**OSレベル（Windows サービス）を Windows アプリで**（＝別 spec `agent-service-manager` 候補・今回は未着手）。
+- クローン化＝**CommonModule を独立 Git リポジトリとして他開発者が各自ソリューションにクローン参照（ProjectReference）し Pull/Push で同期**。共有モデル＝**A（現行方式維持＋規約化）**。
+- SharedCore 供給は**消費者責務＝対象外**。今回は **CommonModule のみ**対象。
+- 事実確認：CommonModule は独立リポジトリ（origin GitHub `n-nonaka-oim/CommonModule`・main・クリーン）。`CommonModule.csproj` は `..\clnCoCore\SharedCore` を相対参照＝**`CommonModule` を `clnCoCore` の兄弟に置けば解決**（配置規約の核）。`AddCommonModule(services, configuration)`＋`CommonDb` 必須。docs/sql に DDL 一式あり。
+
+### 作成（単一正本 `.kiro/specs/CommonModule/commonmodule-distribution/`・全診断クリア・直接編集）
+- **requirements.md**（R1 README／R2 依存・前提／R3 参照＋配置規約／R4 ホスト登録 AddCommonModule＋CommonDb／R5 DB前提・SQL索引／R6 認可・導線／R7 ブランチ・貢献 CONTRIBUTING／R8 公開契約・破壊的変更告知／R9 変更範囲）。
+- **design.md**（Architecture＝モデルA mermaid＋標準レイアウト図／Components and Interfaces＝整備物＋既存公開API／Data Models＝db_common_dev 必要テーブル7＋dbAuthTest 導線／Correctness Properties 1-4（Validates 付）／Error Handling／Testing Strategy／成果物設計＝README/USAGE/docs README SQL索引/CONTRIBUTING/CHANGELOG）。
+- **tasks.md**（1 README／2 USAGE(2.1 配置・参照/2.2 登録・DB・導線・確認・TS)／3 docs/README SQL索引追記／4 CONTRIBUTING／5 CHANGELOG／6 CP＝新規消費者ドライラン（ユーザー））。全て**文書作成**・コード/スキーマ/csproj 不変更。
+
+### 重要な設計判断
+- コードは一切変更しない（配布容易性の文書整備のみ）。成果物は **CommonModule リポジトリ**（別 Git）に置く＝実装時はそちらにコミット/Push（ユーザー承認・CONTRIBUTING ブランチ運用）。
+- 標準配置規約：`workspace-root/{clnCoCore/SharedCore, CommonModule}` の兄弟配置で相対参照解決。SharedCore は消費者が用意。
+
+### 次アクション
+- ユーザー確認後、tasks 1〜5 を実装（CommonModule リポジトリに README/USAGE/CONTRIBUTING/CHANGELOG 作成＋docs/README SQL索引追記）。1タスクずつ・完了ごとに提示。
+- 未着手候補：`agent-service-manager`（Windows 管理アプリ・OSレベル start/stop/install・別ソリューション）。
+
+### コミット（このあと）
+- Nonaka/.kiro：commonmodule-distribution spec 3点＋本memo。
