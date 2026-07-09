@@ -52,6 +52,18 @@ design.md に基づき、CommonModule を他開発者が各自ソリューショ
   - SharedCore 未解決／`CommonDb` 未設定／テーブル未適用 の各症状がトラブルシュート記載どおり再現・解消することを確認する
   - _Requirements: 1.1, 3.1, 4.1, 5.1, 6.1_
 
+- [x] 7. レイアウト・命名規約の確定（本体=`CommonModule`／クローン=`clnCommonModule`）（2026/07/09）
+  - design「レイアウト・命名規約」章に基づく。規約＝`cln` なし=本体作業ツリー／`cln` あり=クローン（`MaterialModule` と `clnMaterialModule` の先例に整合）。
+  - [x] 7.1 本体フォルダ名を `Nonaka\CommonModule` に確定（2026/07/09）
+    - 一時的に `clnCommonModule` へリネームしたが規約と逆のため撤回し `CommonModule` に復帰。中身を移動（同一ボリューム・メタデータ操作）＋空フォルダ削除で実施。内部 `.git`／origin 追跡は不変（`git repo intact` 確認）。
+  - [x] 7.2 参照4ファイルを本体パス（`..\CommonModule\` / `..\..\CommonModule\`）に確定（2026/07/09）
+    - `clnCoCore\slnCoCore.sln`／`clnCoCore\MainWeb\MainWeb.csproj`／`MaterialModule\MaterialModule.csproj`／`clnCoCore\CommonModule.Tests\CommonModule.Tests.csproj`。全走査で旧 cln 参照0件・本体参照4件を確認。
+    - `CommonModule\CommonModule.csproj` の SharedCore 参照は変更不要（親 Nonaka のまま解決）。
+  - [x] 7.3 チェックポイント（ユーザー）- ビルド確認（2026/07/09・ビルドOK）
+    - `slnCoCore.sln` をビルドし、全プロジェクトが本体 `..\CommonModule\CommonModule.csproj` を参照して解決することを確認 → OK
+  - [ ] 7.4 チェックポイント（ユーザー）- クローンの位置づけ
+    - `CoCore\clnCommonModule` は消費者クローン（pull のみ・検証用）。不要なら退役。運用ルール＝「変更は本体でコミット→GitHub push、クローンは pull のみ」
+
 ## Notes
 
 - 本 spec のタスクはすべて**文書作成/追記**であり、コード・スキーマ・csproj は変更しない。
@@ -67,7 +79,10 @@ design.md に基づき、CommonModule を他開発者が各自ソリューショ
     { "id": 0, "tasks": ["2.1", "3", "4", "5"] },
     { "id": 1, "tasks": ["2.2"] },
     { "id": 2, "tasks": ["1"] },
-    { "id": 3, "tasks": ["6"] }
+    { "id": 3, "tasks": ["6"] },
+    { "id": 4, "tasks": ["7.1"] },
+    { "id": 5, "tasks": ["7.2"] },
+    { "id": 6, "tasks": ["7.3", "7.4"] }
   ]
 }
 ```

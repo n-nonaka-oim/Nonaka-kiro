@@ -82,6 +82,42 @@ flowchart LR
 - 推奨と異なる配置にした場合、`..\clnCoCore\SharedCore` が解決できずビルド不能になる旨を README に明記（対処＝標準配置に合わせる）。
 - 本 spec では `CommonModule.csproj` の SharedCore 参照は**変更しない**（供給は消費者責務）。
 
+## 利用前提（CoCore ソリューション限定）【2026/07/09 明記】
+
+- **CommonModule は CoCore 系ソリューション内での利用に限定**する。`CommonModule.csproj` がドメイン層 `SharedCore`（`..\clnCoCore\SharedCore\SharedCore.csproj`）を参照するため、SharedCore を供給できる CoCore ソリューション以外では成立しない（単独ビルド不可）。
+- 消費者は以下を**自分で**用意/追加する:
+  - クローン `clnCommonModule` を**自身の `clnCoCore`（SharedCore を含む）の兄弟**に配置（`..\clnCoCore\SharedCore` が解決する条件）。
+  - ホスト（MainWeb 相当）の `.csproj` に `CommonModule.csproj` への `ProjectReference` を追加。
+  - `AddCommonModule(configuration)` 登録＋接続文字列 `CommonDb`＋`db_common_dev` のテーブル＋認可導線（`m_content`/`r_content_auth`）。
+- ゆえに配置が兄弟でない場合はビルド不可。例: `CoCore\{開発者名}\{clnCoCore, clnCommonModule}` は可／`CoCore\clnCommonModule`（直下・隣に clnCoCore 無し）は SharedCore 未解決で不可。
+
+## レイアウト・命名規約（本体は cln なし／クローンは cln）【2026/07/09 確定】
+
+### 命名規約（このワークスペースの実態に整合）
+- **`cln` なし = 開発元の本体作業ツリー**（例: `MaterialModule`・`CommonModule`）。ここで編集し、GitHub へ push する。
+- **`cln` あり = クローン**（例: `clnCoCore`・`clnDemoModule`・`clnMaterialModule`・`CoCore\clnCommonModule`）。
+- 実態として `clnCoCore\MainWeb` は本体 `..\..\MaterialModule`（cln なし）を参照している。CommonModule もこれに揃える。
+
+### 確定配置（ユーザー確定 2026/07/09）
+| 区分 | パス | 役割 |
+|---|---|---|
+| 本体（開発・push 元） | `…\CoCore\Nonaka\CommonModule` | git 本体（origin=GitHub `n-nonaka-oim/CommonModule`）。slnCoCore が参照 |
+| クローン（消費者） | `…\CoCore\clnCommonModule` | 消費者スタイルのクローン（pull のみ・検証用／不要なら退役可） |
+| リモート | GitHub `n-nonaka-oim/CommonModule` | 配布の単一真実 |
+
+- 本体 `CommonModule.csproj` 内の `..\clnCoCore\SharedCore\SharedCore.csproj` は `Nonaka` 直下前提で解決（変更不要）。
+- 参照4ファイル（`slnCoCore.sln`／`MainWeb.csproj`／`MaterialModule.csproj`／`CommonModule.Tests.csproj`）は本体パス `..\CommonModule\` / `..\..\CommonModule\` を指す（＝元の形）。
+
+### 経緯（2026/07/09・リネームと撤回）
+- いったん「単一クローンへ集約」の意図で本体を `Nonaka\clnCommonModule` にリネームし4参照を `clnCommonModule\` に変更したが、**このワークスペースの規約（cln＝クローン）と逆**であったため撤回。本体を `Nonaka\CommonModule` に戻し、4参照も元へ復帰（全走査で旧 cln 参照0件・本体参照4件を確認）。
+- 内部 `.git`（origin GitHub）はフォルダ移動の影響を受けない（履歴・リモート追跡は不変・`git repo intact` 確認）。
+
+### 運用ルール（2作業コピーのドリフト防止）
+本体 `Nonaka\CommonModule` と消費者クローン `CoCore\clnCommonModule` の2コピーが存在する。**変更は必ず本体でコミット → GitHub へ push、クローンは pull のみ**。push 漏れがドリフトの原因になるため厳守。クローンは検証用途で、不要なら退役してよい。
+
+### 検証
+ユーザーが `slnCoCore.sln` をビルドし、全プロジェクトが本体 `..\CommonModule\CommonModule.csproj` を参照して通ることを確認する。
+
 ## 成果物（ドキュメント設計）
 
 ### 1. ルート `README.md`（一次導線）

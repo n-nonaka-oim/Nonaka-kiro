@@ -387,3 +387,233 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。**次はまず Reload Window して `\\OJIADM23120073\Labs` 認識を確認 → レイアウト方針（上記1/2/3）を決定**。
+
+---
+
+## レイアウト集約 実施（サブ案2・Nonaka\CommonModule → clnCommonModule リネーム）
+
+### 決定（ユーザー承認）
+- 2作業コピー（開発元 `Nonaka\CommonModule`＝ビルド正本／消費者 `CoCore\clnCommonModule`）の二重管理＝push漏れ・ドリフト源。→ **サブ案2**：開発元コピーを cln 命名の単一正本へ集約。`Nonaka\CommonModule` を `Nonaka\clnCommonModule` にリネームし、ビルド正本を Nonaka 内（clnCoCore の真の兄弟・Kiro 編集可）に維持。`clnCoCore`/`clnDemoModule`/`clnMaterialModule` と命名統一。
+
+### 実施内容（Kiro・完了）
+- **リネーム**：Kiro のファイル監視で `Rename-Item` が Access denied（多数の Kiro プロセスがワークスペース `Nonaka` を再帰監視・フォルダ直リネーム不可）。→ 回避策：新フォルダ `clnCommonModule` を作成し `CommonModule` 配下の全項目（隠し含む・.git 込み）を `Move-Item`（同一ボリューム=メタデータ操作・データ複製なし）で移動 → 空の旧 `CommonModule` を削除。`.vs`/`bin`/`obj`（git 管理外）は事前削除。`.git` 健在確認（origin GitHub 追跡不変）。
+- **参照4ファイル更新**（`.csproj`/`.sln` は gitignore 対象＝grep 不可・手動特定）:
+  - `clnCoCore\slnCoCore.sln`：`..\CommonModule\` → `..\clnCommonModule\`
+  - `clnCoCore\MainWeb\MainWeb.csproj`：`..\..\CommonModule\` → `..\..\clnCommonModule\`（**MainWeb 変更＝プラットフォームモジュールのホスト登録の例外・承認済み**）
+  - `MaterialModule\MaterialModule.csproj`：`..\CommonModule\` → `..\clnCommonModule\`
+  - `clnCoCore\CommonModule.Tests\CommonModule.Tests.csproj`：`..\..\CommonModule\` → `..\..\clnCommonModule\`
+  - `clnCommonModule\CommonModule.csproj` の `..\clnCoCore\SharedCore` は変更不要（親 Nonaka のまま解決・確認済み）
+- 全走査で旧パス `\CommonModule\CommonModule.csproj` 参照＝0件・新パス4件確認。
+- spec 反映：`commonmodule-distribution` design に「レイアウト集約」章追記／tasks に task 7（7.1/7.2＝[x]・7.3/7.4＝ユーザー）＋依存グラフ更新。全診断クリア。
+
+### ⏳ ユーザー（次アクション）
+1. **slnCoCore ビルド確認**：全プロジェクトが `clnCommonModule` を参照して解決すること（MainWeb/MaterialModule/CommonModule.Tests 含む）。旧 `.vs`/`bin`/`obj` は削除済みのため再生成される。
+2. **重複クローン退役**：`CoCore\clnCommonModule`（配置ズレ・SharedCore 相対参照が解決しない）を退役（削除はユーザー判断＝破壊的）。以後「1マシン1クローン・commit→push 必須」を運用ルール化。
+3. コミット：`clnCommonModule`（リネーム後・変更なし）／clnCoCore（sln/MainWeb/CommonModule.Tests 参照更新）／MaterialModule（参照更新）／Nonaka/.kiro（spec/memo）。※フォルダ移動は各 git では追跡外/内で見え方が異なるため要確認。
+
+### 注意
+- Nonaka メタリポジトリ上、旧 `CommonModule` 配下が tracked だった場合は delete、`clnCommonModule` 配下が add として現れうる（内部 .git を持つネスト repo なら通常 gitignore/untracked）。git status で確認のうえコミット。
+- MainWeb/AuthModule/SharedCore の機能ソースは不変更（今回は参照パス付け替えのみ＝ホスト登録の例外）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。次＝ユーザーの slnCoCore ビルド確認 → OKなら退役＋コミット。
+
+---
+
+## レイアウト集約の撤回 — 命名規約に整合（本体=CommonModule／クローン=clnCommonModule）確定
+
+### 経緯
+- 直前で本体を `Nonaka\clnCommonModule` にリネーム＋4参照を `clnCommonModule\` に変更したが、ユーザー指摘により**このワークスペースの規約（`cln`なし=本体作業ツリー／`cln`あり=クローン。`MaterialModule` と `clnMaterialModule` の先例・MainWeb は `..\..\MaterialModule` を参照）と逆**と判明 → **撤回**。
+
+### 実施（撤回・完了）
+- フォルダを `Nonaka\clnCommonModule` → `Nonaka\CommonModule` に戻す（VS 未起動確認・`.vs`/`bin`/`obj` 事前削除・中身移動＋空フォルダ削除・`.git` 健在＝origin 追跡不変）。
+- 参照4ファイルを本体パスに復帰：
+  - `clnCoCore\slnCoCore.sln`：`..\CommonModule\CommonModule.csproj`
+  - `clnCoCore\MainWeb\MainWeb.csproj`：`..\..\CommonModule\CommonModule.csproj`
+  - `MaterialModule\MaterialModule.csproj`：`..\CommonModule\CommonModule.csproj`
+  - `clnCoCore\CommonModule.Tests\CommonModule.Tests.csproj`：`..\..\CommonModule\CommonModule.csproj`
+- 全走査：旧 cln 参照0件・本体参照4件・SharedCore 解決OK。＝**今日のリネーム前と同じ状態に復帰**。
+- 別途 `clnCoCore\.vs` は削除済み（VS が旧 CommonModule.csproj タブを復元しようとするエラーの解消用）。
+
+### 確定した配置・命名
+| 区分 | パス | 役割 |
+|---|---|---|
+| 本体（開発・push 元） | `…\CoCore\Nonaka\CommonModule` | git 本体（origin=GitHub `n-nonaka-oim/CommonModule`）・slnCoCore が参照 |
+| クローン（消費者） | `…\CoCore\clnCommonModule` | pull のみ・検証用（不要なら退役可） |
+| リモート | GitHub `n-nonaka-oim/CommonModule` | 配布の単一真実 |
+
+- 規約：`cln`なし=本体／`cln`あり=クローン。
+- 運用ルール：**変更は本体 `Nonaka\CommonModule` でコミット→GitHub push、クローンは pull のみ**（push漏れドリフト防止）。
+- spec 反映：design「レイアウト・命名規約」章を確定版に差し替え／tasks 7（7.1/7.2=[x]・7.3/7.4=ユーザーCP）更新。診断クリア。
+
+### ⏳ ユーザー
+1. `slnCoCore.sln` を開き直す（`.vs` 再生成）→ ビルドし全プロジェクトが本体 `..\CommonModule\CommonModule.csproj` で解決することを確認。旧パスエラーは出ないはず。
+2. コミット対象：今回はフォルダ名・参照とも**リネーム前と同一に復帰**したため、clnCoCore/MaterialModule の csproj・sln は実質差分なし（gitignore 対象なら元々追跡外）。Nonaka/.kiro（spec/memo）は差分あり。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。次＝ユーザーの slnCoCore ビルド確認。
+
+---
+
+## ビルド確認 OK（本体=CommonModule 復帰後）
+
+- ユーザーが `slnCoCore.sln` を開き直しビルド → **OK**。全プロジェクトが本体 `..\CommonModule\CommonModule.csproj` を参照して解決。旧パス（`clnCommonModule` / 旧 CommonModule タブ）エラーも解消。
+- tasks 7.3＝[x]。task 7 は 7.4（クローンの位置づけ＝退役はユーザー任意）を残すのみ。
+- 確定：本体 `Nonaka\CommonModule`（開発・push 元）／クローン `CoCore\clnCommonModule`（pull のみ）。規約 cln=クローン。
+
+### 残（任意・ユーザー）
+- クローン `CoCore\clnCommonModule` の退役（不要なら削除・破壊的）。
+- Nonaka/.kiro の spec/memo コミット（本日分）。csproj/sln はリネーム前と同一復帰のため実質差分なし（gitignore 対象なら追跡外）。
+
+---
+
+## 配布モデルの確定（CoCore ソリューション限定・消費者クローン配置条件）
+
+### ユーザー確認・合意
+- **CommonModule は CoCore 系ソリューション（MainWeb 利用）に限定**。理由＝`CommonModule.csproj` が `..\clnCoCore\SharedCore` を参照（ドメイン層依存）＝SharedCore を供給できる CoCore 以外では成立しない。単独ビルド不可。
+- 消費者（他開発者）は自身で: MainWeb（ホスト）の ProjectReference 追加＋`AddCommonModule`＋`CommonDb`＋DB テーブル＋認可導線。
+- この条件を満たせばクローン CommonModule は利用可能。
+
+### 成立条件（配置・重要）
+- クローン `clnCommonModule` は**消費者自身の `clnCoCore`（SharedCore 含む）の兄弟**に置く必要あり（`..\clnCoCore\SharedCore` 解決のため）。
+- OK: `CoCore\{開発者名}\{clnCoCore, clnCommonModule}`。NG: `CoCore\clnCommonModule`（直下）＝隣に `CoCore\clnCoCore` が無く（確認済み・存在しない）SharedCore 未解決でビルド不可。
+- ⇒ 共有参照先は「CoCore 直下の clnCommonModule」ではなく「各自の clnCoCore の隣にクローン」が正。`CoCore\clnCommonModule`（直下）は成立条件外＝退役 or 放置。
+
+### あなた（開発元）
+- `Nonaka\clnCoCore\slnCoCore.sln` → 本体 `Nonaka\CommonModule`（隣に `Nonaka\clnCoCore`＝SharedCore 解決）。変更時 push。＝現状のままで正。
+
+### spec 反映
+- design に「利用前提（CoCore ソリューション限定）」章を追記（配置条件・消費者責務を明記）。診断クリア。USAGE.md（クローンは clnCoCore の兄弟）と整合。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。
+
+---
+
+## Agent サービス名リネーム（Material… → Common…）＋運用Q&A
+
+### 決定・実施（ユーザー確定：CommonPrintAgent / CommonSmtpAgent）
+- コード（各 `Program.cs`・WindowsService 別 git）:
+  - PrintAgent：`ServiceName` と EventLog `SourceName` を `MaterialPrintAgent` → `CommonPrintAgent`。
+  - SmtpAgent：同 `MaterialSmtpAgent` → `CommonSmtpAgent`。
+- 運用 docs（新名に更新）:
+  - `WindowsService\PrintAgent\docs\spec.md`（sc.exe create/start/stop/delete）・`requirements.md`（AC1 サービス名）。
+  - `WindowsService\SmtpAgent\docs\spec.md`（sc.exe create/start）。
+  - 本体 `Nonaka\CommonModule\docs\smtp-sender実送信テスト手順.md`（Worker 名）。※clone(CoCore\clnCommonModule) は pull で反映。
+- 履歴（未変更・意図的）: session-memo 各日／`PrintAgent\docs\tasks.md` V-1／`direct-print` 実装案（過去記録・設計案のため据え置き）。
+
+### ⚠ 再インストール必要
+- 既に旧名 `MaterialPrintAgent`/`MaterialSmtpAgent` でサービス登録済みなら、`sc stop`→`sc delete`（旧名）→ 新名で `sc create` し直す。EventLog ソース名変更も管理者権限。
+
+### 運用Q&A（回答済み）
+1. 別サーバ移設時：Windows Service はマシンごとの登録が必要（新サーバで sc create、旧から delete）。
+2. 役割分担：CommonModule(Web)=キュー投入＋監視画面(表示のみ)。**キュー監視(ポーリング)と送信/印刷は Agent 側**。
+3. Agent 実行に登録は必須でない：`AddWindowsService()` はサービス対応にするだけで、コンソール(`dotnet run`)でも動く。登録が要るのは常駐サービスとして動かすときのみ。
+4. 「未登録ならエラー」「自動登録」：どちらも技術的に可能だが、自己判定/自己インストールは権限・堅牢性で非推奨。推奨は install/uninstall スクリプト or CLI 引数(`--install`)方式で分離。
+
+### 🟡 未決（次アクション・ユーザー選択待ち）
+- **登録方式**：a) install/uninstall PS スクリプトを各 Agent repo に用意（推奨）／b) exe に `--install`/`--uninstall` CLI 引数追加。決まり次第、各 Agent の deploy 手順(spec.md)を整備。
+- 旧名サービスが稼働中なら停止→delete→新名 create（ユーザー実行）。
+- Agent 変更のコミット/Push は各 repo（PrintAgent/SmtpAgent は独立 git）でユーザー実施。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。
+
+---
+
+## Agent サービス登録方式 a 採用：install/uninstall スクリプト作成
+
+### 作成（各 Agent repo・独立 git）
+- `WindowsService\PrintAgent\install-service.ps1` / `uninstall-service.ps1`
+- `WindowsService\SmtpAgent\install-service.ps1` / `uninstall-service.ps1`
+- 仕様：`#requires -RunAsAdministrator`・`New-Service`（自動起動）・`sc.exe failure` で障害時自動再起動（5秒×3・24h reset）。install は exe 存在チェック＋既存サービス検出でガード・`-BinPath`/`-StartAfterInstall` パラメータ。uninstall は停止→delete＋**旧名（MaterialXxxAgent）を -AlsoRemove 既定で後片付け**（リネーム移行対応）。既定 BinPath＝`C:\{Print|Smtp}Agent\App\{Print|Smtp}Agent.exe`。
+- 方針：開発＝`dotnet run` コンソール実行（登録不要）、本番サーバ＝スクリプトで登録。
+
+### docs 更新
+- `PrintAgent\docs\spec.md` §3/§4・`SmtpAgent\docs\spec.md` デプロイ節に「推奨＝install/uninstall スクリプト」＋手動 sc.exe（同等）を併記。サービス名 Common{Print|Smtp}Agent。
+
+### ⏳ ユーザー
+- 旧名サービスが稼働中なら `.\uninstall-service.ps1`（旧名も消える）→ publish → `.\install-service.ps1 -StartAfterInstall`（管理者 PowerShell）。
+- Agent 変更（Program.cs リネーム＋スクリプト＋docs）のコミット/Push は各 repo（PrintAgent/SmtpAgent 独立 git）でユーザー実施。
+
+### 補足（未対応・別件）
+- `SmtpAgent\docs\spec.md` の「連携テーブル」節は旧モデル（t_order_reports/fax_status）記述のまま＝現行 t_smtp_queue と不整合（今回のサービス登録タスク対象外・別途整合可）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。
+
+---
+
+## SmtpAgent spec.md 不整合訂正（旧モデル → 現行 t_smtp_queue モデル）
+
+- 実コード（TSmtpQueue/MSmtpConfig/MSmtpAgentControl/SmtpJobWorker/SmtpSendService）を正として `WindowsService\SmtpAgent\docs\spec.md` を全面改稿。
+- 訂正内容:
+  - キュー: `t_order_reports`＋`fax_status`＋`print_payload` → **`t_smtp_queue`＋`status`（1/2/3/9）＋ジョブ自身が From/宛先/件名/本文/pdf_path 保持**。
+  - 送信モード: `config_key`→`m_smtp_config` 解決。fax_domain 空=メール直送／`@`始まり=メールtoFAX（数字抽出・先頭0→81・ドメイン付与）／完全アドレス=固定宛先（レガシー・非推奨・残存）。
+  - To/CC/BCC: `;` 分割・trim・空除外。CC/BCC は FAX 正規化なし。
+  - PDF: `pdf_path` 実在時のみ添付／指定あるが不在は**添付なしで送信＋警告**（旧「不在→fax_status=9」は誤り）／未指定は添付なし。
+  - 設定: `SmtpAgent:PdfDirectory` 廃止（ジョブが絶対 pdf_path 保持）。m_smtp_config は config_key/host/port/fax_domain のみ（from/test は持たない）。
+  - 監視画面: `/Material/SmtpMonitor` → **`/Common/SmtpMonitor`**。テスト送信は投入側 recipient 上書き方式（Worker にテスト専用ロジック無し）。
+  - サービス名 `CommonSmtpAgent`・デプロイはスクリプト方式併記。
+- 残存2ヒットは意図的（「t_order_reports 等に依存しない」否定文・uninstall の旧名後片付け注記）。
+- ※PrintAgent spec は今回対象外（別途必要なら確認）。
+
+### ⏳ ユーザー
+- SmtpAgent の変更（Program.cs 名称・スクリプト・spec.md）を SmtpAgent repo でコミット/Push。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。
+
+---
+
+## 新規 spec 起草：agent-service-manager（Agent 管理 WinForms アプリ）
+
+### 経緯・確定要件（ユーザー）
+- SmtpAgent/PrintAgent の起動・停止・状態管理を WinForms(.NET8) 管理アプリ化。**ローカル限定・install/uninstall 含む・ハートビート＋キュー滞留件数表示**まで。WinForms がベストか→小規模運用ツールとして妥当と回答。
+
+### 作成（単一正本 `.kiro/specs/CommonModule/agent-service-manager/`・直接編集・全診断クリア）
+- `.config.kiro`（feature/requirements-first）。
+- requirements.md：R1 一覧／R2 起動停止／R3 状態・自動更新／R4 登録解除(install)／R5 ハートビート／R6 キュー滞留件数／R7 管理者昇格／R8 ローカル限定・DB接続前提／R9 変更範囲（Agent本体・DBスキーマ不変更・リモート/行単位再送は対象外）。EARS・Glossary 付。
+- design.md：WinForms 構成（MainForm＋定期タイマー）／`IServiceControlService`(ServiceController)・`IServiceInstallService`(sc.exe)・`IAgentStatusReader`(db_common_dev 読取専用)・`AppConfig`／`AgentDescriptor`（CommonSmtpAgent=status／CommonPrintAgent=print_status／m_*_agent_control）／Data Models（読み取りのみ）／Correctness Properties 4（応答判定境界・件数保存則・状態マッピング全域・操作ガード）。
+- tasks.md：1 雛形＋対象定義／2 純粋ロジック(2.1〜2.4)／3 サービス制御・登録アダプタ／4 DB読取／5 UI／6 PBT(6.1〜6.4・任意*)／7 CP(ユーザー実機)。依存グラフ付。
+
+### 実装方針の要点
+- 新規独立プロジェクト（`\\...\WindowsService\AgentServiceManager` 想定・net8.0-windows）。他モジュール参照/変更なし。DB は読み取りのみ。管理者昇格(app.manifest)。
+- 純粋ロジックを I/O から分離して FsCheck で検証。ServiceController/sc.exe/実DB は実機確認(ユーザー)。
+
+### 次アクション
+- ユーザーが tasks レビュー → OK なら実装着手（1.1 雛形から1タスクずつ）。プロジェクト配置先（新規 git repo か WindowsService 配下か）を実装前に確認。
+- コミット/Push は当該プロジェクト repo 方針に従う（ユーザー）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。
+
+---
+
+## 🔴 本日のクローズ・チェックポイント（2026/07/09 終了）
+
+### 本日完了（要点）
+1. **CommonModule レイアウト/命名 確定**：本体＝`Nonaka\CommonModule`（開発・push 元・slnCoCore が参照）／クローン＝`CoCore\clnCommonModule`（消費者・pull のみ）。規約 cln=クローン。いったん `clnCommonModule` へ集約リネームしたが規約と逆のため撤回・現状復帰。slnCoCore ビルド OK 確認済み。`clnCoCore\.vs` 削除で VS の旧パスタブエラーも解消。
+   - 利用前提を design に明記：CommonModule は CoCore ソリューション限定（SharedCore 参照）。消費者はクローンを自分の clnCoCore の兄弟に置き、MainWeb 参照＋AddCommonModule＋CommonDb＋DBテーブル＋導線を自前で用意。
+2. **Agent サービス名リネーム**：`Material{Print,Smtp}Agent` → `Common{Print,Smtp}Agent`（各 Program.cs の ServiceName／EventLog SourceName）。運用 docs（両 spec.md・PrintAgent requirements・本体 CommonModule テスト手順 doc）も更新。
+3. **Agent 登録方式 a**：各 Agent repo に `install-service.ps1`/`uninstall-service.ps1` 作成（New-Service 自動起動＋sc.exe failure 再起動・exe/既存チェック・uninstall は旧名 Material… も後片付け）。spec.md にスクリプト方式を併記。
+4. **SmtpAgent spec.md 全面改稿**：旧モデル（t_order_reports/fax_status/print_payload/PdfDirectory/Material監視）→ 現行 t_smtp_queue モデル（status・config_key・mail/fax・pdf_path・/Common/SmtpMonitor）に整合。
+5. **新規 spec `agent-service-manager`**（`.kiro/specs/CommonModule/agent-service-manager/`）：requirements/design/tasks＋.config.kiro 作成・全診断クリア。WinForms(.NET8)・ローカル限定・install 含む・ハートビート＋キュー滞留件数表示。配置先＝**a: `\\...\WindowsService\AgentServiceManager`（新規 git repo）で確定**。
+
+### 🟡 次セッションの次アクション
+1. **agent-service-manager 実装着手**：tasks 1.1（WinForms 雛形＋app.manifest requireAdministrator）から1タスクずつ。配置＝`\\...\WindowsService\AgentServiceManager`（net8.0-windows）。
+2. 純粋ロジック(2.1〜2.4)→ アダプタ(3/4)→ UI(5)→ 任意PBT(6)→ 実機CP(7) の順。
+3. 未処理の任意事項：`CoCore\clnCommonModule` 退役（任意）／PrintAgent spec.md の点検（今回 SmtpAgent のみ改稿）。
+
+### コミット状況（本日・ユーザー実施分）
+- **本体 CommonModule**（`Nonaka\CommonModule`・独立 git・origin GitHub）：docs（smtp-sender テスト手順の Worker 名）→ commit/push はユーザー。
+- **PrintAgent / SmtpAgent**（各独立 git）：Program.cs 名称・install/uninstall スクリプト・docs → 各 repo で commit/push はユーザー。
+- **Nonaka/.kiro**：commonmodule-distribution spec 更新（レイアウト/命名/利用前提）・agent-service-manager spec 新規・本 memo → commit はユーザー。
+- ※csproj/sln はリネーム前と同一復帰のため clnCoCore/MaterialModule は実質差分なし。
+
+### 運用メモ（継続）
+- 本体で編集→push、クローンは pull のみ（ドリフト防止）。MainWeb/AuthModule/SharedCore 不変更。
+- spec は直接編集（サブエージェント不使用・IDE クラッシュ回避）。1ターン1タスク。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260709）。次アクション＝agent-service-manager 実装（tasks 1.1 雛形）。
