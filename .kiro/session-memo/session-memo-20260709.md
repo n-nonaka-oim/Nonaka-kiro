@@ -356,3 +356,34 @@
 
 ### commonmodule-distribution spec 現況
 - tasks 1〜5 実装済み・GitHub 公開済み。残 6（新規消費者ドライラン）＝clnCommonModule を clnCoCore 兄弟配置＋SharedCore 用意でビルド確認（ユーザー）。
+
+---
+
+## レイアウト方針の検討＋ワークスペース権限の知見（未決・次セッション判断）
+
+### 論点（ユーザー提起）
+- 現状は開発元が `Nonaka\CommonModule` で作業＋別に `CoCore\clnCommonModule` クローン＝**2作業コピー**。今回の push 漏れ（GitHub 初期のまま）はこの二重管理が一因。
+- 「本体を `clnCommonModule`（clnCoCore 兄弟）に寄せ、slnCoCore は pull する single-source が smart では？」→ **その通り。ベストプラクティス＝「1マシン1クローン・開発元も消費者と同じ標準配置でドッグフーディング」**。
+
+### ベストプラクティス（結論）
+- 理想: `<root>\{clnCoCore, clnCommonModule}` を全員（開発元含む）共通配置。MainWeb は `..\..\clnCommonModule\CommonModule.csproj`、CommonModule は `..\clnCoCore\SharedCore` を参照。
+- 単一クローンに寄せてドリフト/‑push忘れを防ぐ。
+
+### ⚠ Kiro ツール制約の知見（重要）
+- **ファイル編集ツール（fs_write/read/list/diagnostics）はセッション開始時の許可ルート `...\Nonaka` と `...\WindowsService` に固定**。VS Code で `\\OJIADM23120073\Labs` を後から追加しても**当該セッションには反映されない**（`Labs`・`CoCore\clnCommonModule` とも "outside the workspace" 拒否）。
+- **シェル（execute_pwsh）は広域到達可**：`CoCore\clnCommonModule` への clone/pull/push は成功。git 運用は現状でも可能。
+- 反映には **Reload Window / 新規セッション**が必要。再開後は `CoCore\clnCommonModule` を Kiro でリッチ編集可能になる見込み。
+
+### 次セッションの選択肢（レイアウト・未決）
+1. Reload 後、`CoCore\clnCommonModule` を単一作業コピーにして開発元もそこで作業（clnCoCore 兄弟・要 SharedCore 供給）。MainWeb 参照更新は project-rules で要ユーザー確認。
+2. あるいは `Nonaka\CommonModule` を `Nonaka\clnCommonModule` にリネームして規約名に合わせる（Kiro WS 内維持・MainWeb 参照 `..\..\clnCommonModule` に更新＝要承認）。
+3. 現行維持＋「1クローン・push 必須」を運用ルール化。
+- いずれも **MainWeb.csproj の参照パス変更（要ユーザー承認）** と **重複クローンの解消**が論点。
+
+### 現状の到達（コミット済み）
+- GitHub `n-nonaka-oim/CommonModule` main=`dfd5adc`（実装＋docs 公開済み）。`CoCore\clnCommonModule` は同期済み消費者クローン。
+- commonmodule-distribution spec：tasks 1〜5 完了・6（ドライラン）残。
+- 本日の任意PBT（print-platform 12.14/12.16・send-config 4.4/6.2・monitor-job-delete 4.2）＝実装・dotnet test 44件緑・コミット済み。
+
+### 再開合図
+「再開します、session-memoを確認」。**次はまず Reload Window して `\\OJIADM23120073\Labs` 認識を確認 → レイアウト方針（上記1/2/3）を決定**。
