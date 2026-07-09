@@ -86,6 +86,38 @@ design.md に基づき、CommonModule（全社共通送信基盤・対象DB `db_
 - [ ] 7. チェックポイント - 単発テスト送信のビルド/テストを通す
   - ビルド／テスト実行はユーザー側。ボタン→enqueue→（SmtpAgent 起動時）実送信の一連が契約どおりであることを確認する。実送信はユーザー側。
 
+- [ ] 8. 【2026/07/09 改訂】ユーザー別設定＋添付ファイル（R9/R10）
+  - [x] 8.1 `m_send_config` に列追加（ALTER DDL）＋エンティティ拡張
+    - `CommonModule/docs/sql/alter_m_send_config_user_attachment.sql`（db_common_dev・冪等・`COL_LENGTH` ガード）：`owner_user_id`（NVARCHAR(128) NULL）・`attachment_path`（NVARCHAR(500) NULL）を追加。既存有効行は default（owner_user_id NULL）
+    - `MSendConfig` に `OwnerUserId`（`[Column("owner_user_id")]`）・`AttachmentPath`（`[Column("attachment_path")]`/`[MaxLength(500)]`）を追加
+    - _Requirements: 9.1, 9.2, 10.1_
+
+  - [x] 8.2 `ISendConfigService` に `GetForUserAsync` を追加し default フォールバック
+    - `GetActiveAsync` を **default 行のみ（`owner_user_id IS NULL` かつ is_active=1）** に限定（投入側＝業務送信は default を採用・R9.6・互換維持）
+    - `GetForUserAsync(userId)`：ユーザー行（`owner_user_id=userId`・is_active=1）→無ければ default にフォールバック
+    - _Requirements: 9.3, 9.4, 9.6, 9.8_
+
+  - [x] 8.3 管理画面をユーザー別 表示/保存に改修＋添付パス編集
+    - ログインユーザーID（`IUserRepository`／Claims）でユーザー行を表示、無ければ default を初期表示。保存は `owner_user_id=ログインID` の行を作成/更新（default は書き換えない）
+    - InputModel に `AttachmentPath`（`[MaxLength(500)]`）を追加し編集可能に
+    - _Requirements: 9.3, 9.4, 9.5, 9.7, 10.2_
+
+  - [x] 8.4 単発テスト送信に添付＋送信時読込判定を追加
+    - `GetForUserAsync(userId)` で実行ユーザーの設定を取得。`attachment_path` 非空なら送信時に `File.Exists` 判定→不可なら enqueue せずエラー、可なら `pdfPath` として添付。空なら添付なし
+    - _Requirements: 10.3, 10.4, 10.5, 9.8_
+
+  - [x] 8.5 テーブル定義書・ER図に列追加を追随
+    - `.kiro/docs/db/テーブル定義書.md`・`ER図.md` の `m_send_config` に `owner_user_id`・`attachment_path` を追記
+    - _Requirements: 9.1, 10.1_
+
+  - [ ]* 8.6 Property 2（ユーザー設定解決）＋添付例示テスト
+    - **Property 2: ユーザー設定解決は「ユーザー行→無ければ default」と一致する**（`// Feature: send-config-master, Property 2`・100反復以上）
+    - 添付：空→添付なし／存在→添付／不存在→enqueue せずエラー を例示（`CommonModule.Tests`）
+    - _Requirements: 9.3, 9.4, 9.8, 10.3, 10.4, 10.5_
+
+  - [ ] 8.7 チェックポイント - ユーザー別＋添付のビルド/テストを通す
+    - ビルド／テスト実行はユーザー側。ALTER DDL 適用後、ユーザー別 表示/保存・添付（存在/不存在）の一連が整合していることを確認する。
+
 ## Notes
 
 - `*` 付きサブタスク（テスト）は任意。コア実装タスクには `*` を付けていない。
@@ -105,7 +137,12 @@ design.md に基づき、CommonModule（全社共通送信基盤・対象DB `db_
     { "id": 3, "tasks": ["3.3", "4.2", "4.3"] },
     { "id": 4, "tasks": ["4.4", "5"] },
     { "id": 5, "tasks": ["6.1"] },
-    { "id": 6, "tasks": ["6.2", "7"] }
+    { "id": 6, "tasks": ["6.2", "7"] },
+    { "id": 7, "tasks": ["8.1"] },
+    { "id": 8, "tasks": ["8.2", "8.5"] },
+    { "id": 9, "tasks": ["8.3"] },
+    { "id": 10, "tasks": ["8.4"] },
+    { "id": 11, "tasks": ["8.6", "8.7"] }
   ]
 }
 ```

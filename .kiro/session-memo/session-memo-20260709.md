@@ -49,3 +49,37 @@
 
 ## 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260709）。次アクション＝追加1 ビルド確認→コミット、または追加2 spec 改訂着手。
+
+---
+
+## 追加2: SendConfig ユーザー別＋添付 — spec 改訂＋実装 完了（未コミット）
+
+### 方針（ユーザー確定）
+- 送信設定を**ログインユーザー別**に保存/読込。`m_send_config` に `owner_user_id`（NULL=default 行）追加。ユーザー行が無ければ default を初期表示。保存でユーザー行を作成。
+- **投入側（業務送信）は常に default 行を採用**（GetActiveAsync が default 限定）。default を変えれば業務送信に反映。
+- 添付：`attachment_path`（固定1パス・空=添付なし・default 空）。**送信時**に File.Exists 判定→不可なら投入せずエラー。
+
+### spec 改訂（send-config-master・単一正本・直接編集）
+- requirements：Introduction/Glossary に改訂注記＋**R9（ユーザー別・default フォールバック）／R10（添付・送信時判定）** 追記。
+- design：追加設計セクション（ALTER 2列・ISendConfigService.GetForUserAsync＋GetActiveAsync を default 限定・PageModel ユーザー別・単発テスト添付・Property 2）。
+- tasks：task群8（8.1〜8.7）＋依存グラフ更新。8.1〜8.5＝[x]、8.6*（Property2/添付例示・任意）・8.7 CP（ユーザー）＝残。
+
+### 実装（CommonModule・直接編集）
+- `docs/sql/alter_m_send_config_user_attachment.sql` 新規（owner_user_id NVARCHAR(128)・attachment_path NVARCHAR(500) を冪等 ALTER）。
+- `MSendConfig`：`OwnerUserId`・`AttachmentPath` 追加。
+- `ISendConfigService`/`SendConfigService`：`GetActiveAsync` を **default 限定（owner_user_id==null）** に変更（投入側＝業務送信は default 採用・互換）＋`GetForUserAsync(userId)`（ユーザー行→default フォールバック）追加。
+- `SendConfig/Index.cshtml.cs`：ユーザー別 表示/保存（owner_user_id=NameIdentifier クレーム。SharedCore 依存を増やさず Claims 利用）・default 初期表示・row_version 楽観ロック維持。単発テスト送信を `GetForUserAsync`＋添付（ResolveAttachment＝File.Exists・不可はエラー・pdfPath 付与）に改修。InputModel に AttachmentPath 追加。
+- `SendConfig/Index.cshtml`：添付ファイルパス入力欄追加・説明文をユーザー別＋添付に更新。
+- `.kiro/docs/db/テーブル定義書.md`・`ER図.md`：m_send_config に owner_user_id・attachment_path 追記。
+
+### 🔴 実行時前提（重要・ユーザー）
+- **`alter_m_send_config_user_attachment.sql`（db_common_dev）を適用してからビルド実行**すること。未適用だと EF が `owner_user_id`/`attachment_path` 列を参照して**実行時エラー**（SendConfig 画面・GetActiveAsync 経由の投入側 DispatchEnqueue も影響）。output_type と同種の前提。
+- 既存 default 行は ALTER 後 owner_user_id=NULL のまま＝default として機能。
+
+### 次アクション
+1. ユーザー：ALTER 適用 → slnCoCore ビルド → `/Common/SendConfig`（ユーザー別保存・添付・単発テスト送信）動作確認。OKなら追加2 をコミット（CommonModule 実装＋Nonaka/.kiro spec/docs/memo）。
+2. 任意：8.6 PBT（Property2/添付例示）。J-1 DROP。
+
+### コミット状況（本日）
+- コミット済：`35fb376`/`5571c40`（前回クローズ分）・`f77a0b9`/`0a57ba9`（追加1 monitor-job-delete）。
+- 未コミット：CommonModule（send-config-master ユーザー別＋添付：MSendConfig/ISendConfigService/SendConfigService/SendConfig画面2/ALTER SQL）・Nonaka/.kiro（send-config-master spec 3・docs/db 2・本memo）。

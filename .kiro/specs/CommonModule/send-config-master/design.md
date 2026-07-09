@@ -247,3 +247,88 @@ Area `Common` の Razor Pages。`CommonDbContext` を Primary Constructor で直
 - 成果物は **CommonModule 内で完結**し、MainWeb・AuthModule・SharedCore は変更しない（R8.1）。
 - マスタは `db_common_dev`、導線登録は `dbAuthTest` に対して行う（R8.2・R8.3）。
 - DDL 適用・導線 SQL 実行・ビルド・テスト実行・実送信は**ユーザー側の作業**とする（R8.5）。
+
+## 追加設計（2026/07/09：ユーザー別設定＋添付ファイル）＝R9/R10
+
+> 送信設定を**ログインユーザー別**に保存/読込できるよう拡張し、単発テスト送信に**添付ファイル**（固定パス・送信時に読込可否判定）を追加する。**投入側（業務送信）は常に default 行を採用**し、ユーザー別は管理画面・単発テスト送信のみ。実装が本設計へ追随する（R1/R2/R3/R6 の拡張）。
+
+### Data Models（スキーマ拡張・ALTER）
+
+`m_send_config` に2列を追加する（既存 DDL は再作成せず ALTER で適用）。
+
+| 追加列 | 型 | 制約 | 説明 |
+|--------|----|------|------|
+| `owner_user_id` | NVARCHAR(128) | NULL 許容 | 所有ユーザーID（SharedCore 由来）。**NULL=default 行**（共通・投入側採用）。値あり=当該ユーザー専用行 |
+| `attachment_path` | NVARCHAR(500) | NULL 許容 | 単発テスト送信の添付ファイル固定パス。空/NULL=添付なし。default は空 |
+
+- 既存の有効行（`is_active=1`）は `owner_user_id IS NULL` の **default 行**として扱う（ALTER 後、既存1行が default になる）。
+- 一意性：`(owner_user_id, is_active)` で有効行が高々1件となるよう運用（アプリ層で保証。NULL を含む）。
+- エンティティ `MSendConfig` に `OwnerUserId`（`[Column("owner_user_id")]`・`string?`）・`AttachmentPath`（`[Column("attachment_path")]`・`[MaxLength(500)]`・`string?`）を追加。
+- DDL：`CommonModule/docs/sql/alter_m_send_config_user_attachment.sql`（冪等・`COL_LENGTH` ガードで列追加。実行はユーザー）。
+
+### Components and Interfaces（拡張）
+
+#### ISendConfigService（メソッド追加）
+
+```csharp
+public interface ISendConfigService
+{
+    // 既存（互換維持）：default 行（owner_user_id IS NULL・is_active=1）を取得。投入側が使用。
+    Task<MSendConfig?> GetActiveAsync(CancellationToken ct = default);
+
+    // 追加：ユーザー行（owner_user_id=userId・is_active=1）を取得。無ければ default 行にフォールバック。
+    Task<MSendConfig?> GetForUserAsync(string userId, CancellationToken ct = default);
+}
+```
+
+- `GetActiveAsync`：`Where(c => c.IsActive && c.OwnerUserId == null).OrderBy(Id).FirstOrDefaultAsync`（**default 行のみ**）。投入側（`DispatchEnqueueService`）は本メソッドを使い続ける＝業務送信は default を採用（R9.6・互換）。
+- `GetForUserAsync(userId)`：ユーザー行→無ければ `GetActiveAsync`（default）にフォールバック（R9.4/R9.8）。
+- 実装は `internal SendConfigService`・AsNoTracking。
+
+#### 管理画面 PageModel（SendConfig/Index）
+
+- ログインユーザーID を取得（`User.FindFirstValue(ClaimTypes.NameIdentifier)` または `IUserRepository`）。CommonModule から SharedCore.IUserRepository を利用（既に他画面で使用実績あり）。
+- **表示（OnGet）**：ユーザー行があれば表示、無ければ default 行を初期表示（`HasExisting` はユーザー行の有無で判定）。`OwnerUserId`/`AttachmentPath` をフォームに反映。
+- **保存（OnPostSave）**：`owner_user_id = ログインユーザーID` の行を作成/更新（default 行は書き換えない）。新規時 `OwnerUserId=userId`・`is_active=1`・時刻設定。更新は row_version 楽観ロック（既存どおり）。`AttachmentPath` は空白正規化。
+- **入力**：`AttachmentPath` を InputModel に追加（`[MaxLength(500)]`・任意）。EmailAddress 検証は from/test_email 既存どおり。
+
+#### 単発テスト送信（OnPostTestSendFax / Mail）の拡張（R10）
+
+- 実行ユーザーの設定を `GetForUserAsync(userId)` で取得（ユーザー行→default）。
+- 添付判定（送信時）：
+  ```csharp
+  string? pdfPath = null;
+  if (!string.IsNullOrWhiteSpace(cfg.AttachmentPath))
+  {
+      if (!System.IO.File.Exists(cfg.AttachmentPath))
+      {
+          TempData["ErrorMessage"] = $"添付ファイルが読み込めません: {cfg.AttachmentPath}";
+          return RedirectToPage("Index");   // enqueue しない（R10.5）
+      }
+      pdfPath = cfg.AttachmentPath;
+  }
+  await smtpQueue.EnqueueAsync(..., pdfPath: pdfPath, ct);   // 空なら添付なし（R10.3）
+  ```
+- `File.Exists` を読込可否判定として用いる（存在＝読込可能とみなす。UNC/権限起因の失敗は SmtpAgent 側でログ）。
+
+### 投入側（業務送信）への影響
+
+- `DispatchEnqueueService` は `GetActiveAsync`（default 行）を使い続けるため**変更不要**（既存の recipient 上書き方式のまま・R9.6）。default 行の値を変更すれば業務送信に反映される。
+
+### Correctness Properties（追加）
+
+### Property 2: ユーザー設定解決は「ユーザー行→無ければ default」と一致する
+
+*任意の* `m_send_config` 行集合（`owner_user_id`＝NULL/各ユーザーID、`is_active` 混在）と 任意のユーザーID に対して、`GetForUserAsync(userId)` は「`is_active=1` かつ `owner_user_id=userId` の行（複数あれば id 昇順先頭）」を返し、存在しなければ「`is_active=1` かつ `owner_user_id IS NULL` の default 行」を返す。default も無ければ null。
+
+**Validates: Requirements 9.3, 9.4, 9.8**
+
+### Testing Strategy（追加）
+
+- Property 2（ユーザー設定解決）を `CommonModule.Tests`（InMemory・100反復以上・`// Feature: send-config-master, Property 2`）。
+- 添付：`attachment_path` 空→添付なし・非空かつ存在→添付・非空かつ不存在→enqueue せずエラー、を例示テストで検証（`File.Exists` は一時ファイル/存在しないパスで分岐）。
+
+### 変更範囲・制約
+
+- CommonModule 内で完結（エンティティ・サービス・管理画面・DDL）。MainWeb・AuthModule・SharedCore は変更しない（SharedCore は参照のみ）。
+- DDL（ALTER）適用・ビルド・テスト・実送信はユーザー側。

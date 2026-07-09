@@ -133,9 +133,11 @@ DB: `db_common_dev` / Server: `OJIADM23120073\DEVELOPMENT`
 erDiagram
     m_send_config {
         int id PK
+        nvarchar owner_user_id
         nvarchar from_address
         nvarchar test_fax_number
         nvarchar test_email
+        nvarchar attachment_path
         bit is_active
         datetime2 created_at
         datetime2 updated_at
