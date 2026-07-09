@@ -44,8 +44,8 @@ design.md に基づき、Common_SmtpMonitor（`/Common/SmtpMonitor`）と Common
     - **Validates: Requirements 1.2, 1.3, 2.2, 2.3, 3.1, 3.2**
     - `CommonModule.Tests`（InMemory）：ジョブ集合（Id×status 1/2/3/9）＋選択Id集合を生成し、`OnPostDeleteAsync` 後に「選択かつ status≠2（Print は print_status≠2）」のみ削除・他は不変を検証。`// Feature: monitor-job-delete, Property 1` タグ・100反復以上
 
-  - [ ]* 4.2 例示テスト（未選択・処理中のみ・混在）
-    - 未選択→0件＋エラーメッセージ、処理中のみ選択→0件、混在→削除可能分のみ削除＋件数メッセージ、を検証
+  - [x]* 4.2 例示テスト（未選択・処理中のみ・混在）（Smtp/Print 両画面・`CommonModule.Tests/Pages/{Smtp,Print}Monitor/*DeleteExampleTests.cs`・2026/07/09）
+    - 未選択→0件＋「削除するジョブを選択してください。」、処理中(2)のみ選択→0件（残存）＋除外注記、混在→削除可能分(1/3/9)のみ削除・処理中残存＋件数メッセージ、を Smtp/Print 両監視画面で検証（InMemory）
     - _Requirements: 3.3, 4.2_
 
 ## Notes

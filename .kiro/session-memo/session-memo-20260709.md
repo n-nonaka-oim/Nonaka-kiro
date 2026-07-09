@@ -244,3 +244,25 @@
 ### 未コミット（このあとコミット）
 - clnCoCore/CommonModule.Tests：PrinterInventoryUpsertIntegrationTests.cs（新規）。
 - Nonaka/.kiro：print-platform tasks 12.16＝[x]・本memo。
+
+---
+
+## CommonModule 残作業（任意PBT）続き — send-config 4.4/6.2・monitor-job-delete 4.2 例示テスト完了
+
+- コミット済：12.14＝clnCoCore `9c52786`／Nonaka `aaa91db`。12.16＝clnCoCore `fee19de`／Nonaka `e2d8889`。
+- **send-config-master 4.4/6.2**：`CommonModule.Tests/Pages/SendConfig/SendConfigPageTests.cs`（新規）。
+  - 4.4 管理画面：OnGetAsync ユーザー行→HasExisting=true／default フォールバック(Id=0)／OnPostSave 新規作成(default 不変)・既存更新→Redirect／ModelState 不正→Page 未保存／ログイン不明→Page＋Error。PageContext/TempData/Claims スタブ・InMemory。
+  - 6.2 単発テスト送信：FAX→`EnqueueAsync("common","fax",…,test_fax_number,…,pdfPath=null)` を1回／Mail→mail+test_email 1回／宛先未設定→未投入＋Error／設定 null→未投入＋Error／添付非空かつ読込不可→未投入＋「添付ファイルが読み込めません」。`ISendConfigService`/`ISmtpQueueService` を Moq。
+- **monitor-job-delete 4.2**：`Pages/SmtpMonitor/SmtpMonitorDeleteExampleTests.cs`・`Pages/PrintMonitor/PrintMonitorDeleteExampleTests.cs`（各新規）。未選択→0件＋「削除するジョブを選択してください。」／処理中(2)のみ→0件残存＋除外注記／混在→削除可(1/3/9)のみ削除・処理中残存＋件数。両監視画面・InMemory。
+- tasks：send-config 4.4/6.2＝[x]*、monitor-job-delete 4.2＝[x]*。全診断クリア。
+
+### CommonModule 任意PBT の到達
+- 実装可能な任意PBTはほぼ消化：print-platform 12.14/12.16、send-config 3.3(既)/4.4/6.2/8.6(既)、monitor-job-delete 4.1(既)/4.2。
+- 残るのは環境前提のもの：**smtp-sender 10.2/10.3（SQL Server 前提の統合・スキップ可）**・**print-platform 7.4（PrintAgent heartbeat 確認＝別ソリューション）**。CommonModule.Tests の単体/PBT 範囲では対象外。
+
+### ⏳ ユーザー
+- `dotnet test CommonModule.Tests`（clnCoCore）でグリーン確認（本セッション追加：PrinterResolution/PrinterInventoryUpsert/SendConfigPage/Smtp・PrintMonitorDeleteExample）。
+
+### 未コミット（このあとコミット）
+- clnCoCore/CommonModule.Tests：SendConfigPageTests.cs・SmtpMonitorDeleteExampleTests.cs・PrintMonitorDeleteExampleTests.cs（各新規）。
+- Nonaka/.kiro：send-config-master/monitor-job-delete tasks・本memo。

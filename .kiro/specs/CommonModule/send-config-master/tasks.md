@@ -63,9 +63,9 @@ design.md に基づき、CommonModule（全社共通送信基盤・対象DB `db_
     - `CommonModule/docs/sql/register_send_config_content.sql`（dbAuthTest）：`m_content` に Area `Common`・page `SendConfig/Index` を登録（未登録時のみ）＋ `r_content_auth` 権限。実行はユーザー
     - _Requirements: 3.12, 8.3_
 
-  - [ ]* 4.4 管理画面の例示テスト
-    - 有効行あり→HasExisting=true・値反映／無し→空フォーム／新規保存→is_active=1・時刻設定・成功／更新→updated_at 更新・成功／未検出メッセージ／ModelState 不正で再表示／競合メッセージ（例外注入 or 並行更新）を `CommonModule.Tests` で検証
-    - _Requirements: 3.3, 3.4, 3.7, 3.8, 3.9, 3.10, 3.11_
+  - [x]* 4.4 管理画面の例示テスト（`CommonModule.Tests/Pages/SendConfig/SendConfigPageTests.cs`・2026/07/09）
+    - ユーザー行あり→HasExisting=true・値反映／無し→default 初期表示・Id=0／新規保存→ユーザー行作成(is_active=1)・default 不変・成功→Redirect／既存ユーザー行→更新→Redirect／ModelState 不正→Page・未保存／ログイン不明→Page＋ErrorMessage を検証（PageContext/TempData/Claims スタブ・InMemory）
+    - _Requirements: 3.3, 3.4, 3.7, 3.8, 3.9, 3.10, 3.11, 9.3, 9.4, 9.5_
 
 - [ ] 5. チェックポイント - CommonModule のビルド/テストを通す（ここまでで実装済み分＋2.1 の整合）
   - ビルド／テスト実行はユーザー側。マスタ・サービス・管理画面・DBドキュメントが整合していることを確認する。
@@ -79,9 +79,9 @@ design.md に基づき、CommonModule（全社共通送信基盤・対象DB `db_
     - From は有効行 `from_address`（無ければ既定フォールバック方針に準拠）
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.3_
 
-  - [ ]* 6.2 単発テスト送信の例示テスト
-    - 宛先設定あり→`EnqueueAsync` が config_key/宛先を正しく1回呼ばれる（FAX=fax+test_fax_number／Mail=mail+test_email）、宛先未設定→enqueue されずメッセージ、を `ISmtpQueueService` モックで検証（`CommonModule.Tests`）
-    - _Requirements: 6.2, 6.3, 6.5, 7.1, 7.2_
+  - [x]* 6.2 単発テスト送信の例示テスト（`CommonModule.Tests/Pages/SendConfig/SendConfigPageTests.cs`・2026/07/09）
+    - FAX→`EnqueueAsync("common","fax",…,test_fax_number,…,pdfPath=null)` を1回／Mail→config_key=mail+test_email を1回／宛先未設定→未投入＋ErrorMessage／設定 null→未投入＋ErrorMessage／添付パス非空かつ読込不可→未投入＋「添付ファイルが読み込めません」を `ISendConfigService`/`ISmtpQueueService` モックで検証
+    - _Requirements: 6.2, 6.3, 6.5, 7.1, 7.2, 10.5_
 
 - [ ] 7. チェックポイント - 単発テスト送信のビルド/テストを通す
   - ビルド／テスト実行はユーザー側。ボタン→enqueue→（SmtpAgent 起動時）実送信の一連が契約どおりであることを確認する。実送信はユーザー側。
