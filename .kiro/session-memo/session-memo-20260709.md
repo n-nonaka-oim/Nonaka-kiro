@@ -332,3 +332,27 @@
 ### クローンフォルダ命名（cln 接頭辞・ユーザー指示）
 - 他モジュール（clnCoCore/clnDemoModule）に合わせ、消費者のクローン先を **`clnCommonModule`**（cln 接頭辞）に統一。README/USAGE/design の配置図・ProjectReference例・クローン例（`git clone ... clnCommonModule`）を更新。
 - `CommonModule.csproj` の `..\clnCoCore\SharedCore` は「clnCoCore の兄弟であること」だけに依存＝クローン名 `clnCommonModule` でも解決（csproj ファイル名は不変）。
+
+---
+
+## clnCommonModule クローン作成＋GitHub 初回公開（push）
+
+### 重要発見
+- **GitHub origin/main が初期スケルトン(`35eae96`)のまま**で、ローカル正本 `Nonaka\CommonModule` の main が **未push 20件以上**（send-config／print-platform／monitor-delete 実装全体＋本日 docs）先行していた。=> クローンしても中身が入らない状態だった。
+
+### 実施（シェル経由・ファイル編集ツールはWS外で不可だが execute_pwsh は到達可）
+1. ユーザー承認のうえ **`git push origin main`**（`35eae96..dfd5adc`）＝実装全体＋docs を GitHub 初回公開。
+2. `\\OJIADM23120073\Labs\web\asp\CoCore\clnCommonModule`（ユーザーが作成）へ **GitHub から clone**（origin=GitHub・main・cln 接頭辞）。
+3. push 後に **`git pull origin main`** で clnCommonModule を最新化 → 42ファイル反映（Areas/Data/Services/docs/sql/README/USAGE/CONTRIBUTING/CHANGELOG）。HEAD=`dfd5adc`。
+
+### 状態
+- GitHub `n-nonaka-oim/CommonModule` main = `dfd5adc`（最新・実装＋docs 公開済み）。
+- `clnCommonModule` = GitHub と同期済みの消費者クローン（他開発者はこれと同様に clone→ProjectReference→pull/push）。
+- ⚠ clnCommonModule は Kiro ワークスペース外のためファイル編集ツールでは触れない（シェルからは可）。
+
+### 注意（今後の運用）
+- 以後、CommonModule の変更は Nonaka\CommonModule で commit → **push（origin）** しないと他開発者クローンに反映されない。今回のように push 忘れに注意。
+- CONTRIBUTING では main 保護・feature/PR を推奨だが、今回は初回公開として main 直 push（オーナー個人リポジトリ・ユーザー判断）。
+
+### commonmodule-distribution spec 現況
+- tasks 1〜5 実装済み・GitHub 公開済み。残 6（新規消費者ドライラン）＝clnCommonModule を clnCoCore 兄弟配置＋SharedCore 用意でビルド確認（ユーザー）。
