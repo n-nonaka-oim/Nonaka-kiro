@@ -169,3 +169,78 @@
 - SumatraPDF＝PDF「印刷」ツール（生成は QuestPDF・クラウド可）。サイレント印刷はオンプレプリンタ対象。
 - 決定：**PrintAgent と SumatraPDF は同一オンプレ機（プリンタ到達可）に同梱設置**。`SumatraPdfPath` はその機のローカルパス。Web/DB を AWS 化しても PrintAgent＋SumatraPDF はオンプレ据置（`t_print_queue` は DB 共有＝投入がクラウドでも PrintAgent がオンプレでポーリング印刷）。Linux クラウドでは SumatraPDF 不可。
 - docs 反映：`PrintAgent/docs/spec.md` 前提準備に「配置方針」注記。ユーザーは PrintAgent とリンクして管理する方針。
+
+---
+
+## 🔴 本日のクローズ・チェックポイント（2026/07/10 終了）
+
+### 本日完了（すべてコミット済み・push なし）
+- **agent-service-manager 完成**（WinForms/.NET8・ローカル/リモート対応・起動/停止/登録/解除・ハートビート/滞留件数表示・実行時ターゲット追加/除外/保存）。tasks 1〜9 全完了。実機CP（ローカル/サーバ）OK。
+  - コミット：AgentServiceManager `77b3ef1`→`3bc9267`→`d3c04a0`／Nonaka `c202af9`→`4a78275`→`3f89cf0`。
+- **実機トラブルシュート解決＋docs化**：リモートSCM権限（ドメイン=対象機ローカル管理者＋クライアント昇格）／1053=発行物不完全（publish 一式）／5=非昇格／PS の `sc`=Set-Content 罠。PrintAgent/SmtpAgent spec.md にトラブルシュート追記（`6937fd5`/`5f68165`）。
+- **配置方針**：PrintAgent＋SumatraPDF はオンプレ同梱（クラウド移行時も据置・印刷はオンプレ）。PrintAgent `1f4198a`／Nonaka `1b2f88f`。
+
+### 🟡 次セッションの調査テーマ（ユーザー提起・未着手）
+**「/Labs をワークスペース化したので、配下の `Nonaka`／`WindowsService`／`clnCommonModule` を `Labs` に統合できるか・統合して問題ないか」を検討する。**
+
+調査すべき論点（重要）:
+1. 「統合」の意味を先に定義：(a) Kiro のワークスペース単一ルート化（表示上の統合・git やフォルダは不変）／(b) フォルダ物理移動で階層を平坦化／(c) 複数 git リポジトリを1つのモノレポに統合。→ どれを指すかで難易度・リスクが全く違う。
+2. **現状は独立 git リポジトリが多数**：Nonaka（メタ/.kiro）、Nonaka\clnCoCore、Nonaka\CommonModule、Nonaka\MaterialModule、CoCore\clnCommonModule、WindowsService\{PrintAgent,SmtpAgent,AgentServiceManager} 等。各々 origin/remote を持つものあり（CommonModule=GitHub 等）。→ モノレポ化は履歴/remote/運用に大きな影響。submodule/subtree の検討要。
+3. **相対参照の破壊リスク**（CommonModule リネームで経験済み）：`clnCoCore\MainWeb`→`..\..\{CommonModule,MaterialModule,clnDemoModule}`、`CommonModule`/`MaterialModule`→`..\clnCoCore\SharedCore` 等。フォルダ階層を変えると `.csproj`/`.sln` の相対パスが全滅しうる。移動時は参照一括修正（前回の手順が雛形）。
+4. **Kiro ツール権限**：セッション開始時の許可ルートに依存。/Labs をルート化した効果と、フォルダ移動後の再認識（Reload）要否。
+5. **エージェントの配置制約**：PrintAgent はオンプレ据置方針。統合＝リポジトリ整理であって物理デプロイ配置とは別、を混同しない。
+
+推奨の初期スタンス（次回そのまま議論可）:
+- (a) ワークスペース単一ルート化は低リスクで既に近い状態＝OK。
+- (b)/(c) フォルダ移動・モノレポ化は**要計画**。まず「何を達成したいか（見た目の統合か／単一リポジトリ管理か／ドリフト防止か）」を確定 → 影響（相対参照・remote・履歴）を洗い出し → 小さく可逆に実施（前回の CommonModule 手順＝移動＋全参照修正＋ビルド確認、が雛形）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260710）。次アクション＝**Labs 配下（Nonaka/WindowsService/clnCommonModule）の「Labs 統合」可否の検討**（まず統合の定義＝(a)/(b)/(c) の確認から）。
+
+---
+
+## 「Labs 統合」検討 → (a) マルチルート ワークスペースで一元化（物理移動なし・実施）
+
+### 実測で判明した現状
+- `\\...\Labs` は**共有ネットワークドライブ**（QA/sdoc/lib/navi 等 無関係資産＋`web`＋`WindowsService`）。
+- `Labs\web\asp\CoCore` に**複数開発者**（Hayami/Ito/Nonaka）＋clnCommonModule/DemoModule/slnCoCore/repo。
+- → Labs 直下への物理統合(b)や モノレポ化(c)は**共有領域を汚す/他者衝突/相対参照全滅**で非推奨。
+
+### 決定（ユーザー：(a)）
+- 物理移動・git 変更なし。**マルチルート `.code-workspace`** で Nonaka/clnCommonModule/WindowsService を1ワークスペースに束ねる。
+- 作成：`\\...\CoCore\Nonaka\CoCore-Workspace.code-workspace`（folders 3ルート＋files.exclude で bin/obj/.vs 非表示）。
+- 効果：一元管理・可逆・参照/リポジトリ不変。次回このワークスペースで開けば3ルートが編集対象に。旧 `Nonaka.code-workspace.xxx` は不要なら削除可。
+
+### ⏳ ユーザー
+- 「ファイルからワークスペースを開く」→ `CoCore-Workspace.code-workspace` を選択して運用開始。
+- 問題なければ本 memo と workspace ファイルをコミット（Nonaka/.kiro＋ルートの .code-workspace）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260710）。統合＝(a) マルチルート化で対応済み。
+
+---
+
+## 🔴 本日の最終クローズ（2026/07/10 終了・2回目）
+
+### 本セッション後半の成果
+- **agent-service-manager 実機トラブルシュート完了**（リモートSCM権限＝ドメインで対象機ローカル管理者追加＋クライアント昇格／1053＝発行物不完全→publish 一式／5＝非昇格／PS `sc`=Set-Content 罠）。PrintAgent/SmtpAgent docs にトラブルシュート追記。
+- **配置方針**：PrintAgent＋SumatraPDF はオンプレ同梱・据置（クラウド移行時も印刷はオンプレ）。docs 反映。
+- **「Labs 統合」＝(a) マルチルート ワークスペース化で対応**：`CoCore-Workspace.code-workspace`（Nonaka/clnCommonModule/WindowsService の3ルート）作成。物理移動・参照・git 不変。画面で3ルート表示を確認済み。
+
+### コミット（本日・push なし）
+- AgentServiceManager `77b3ef1`/`3bc9267`/`d3c04a0`。
+- SmtpAgent `5f68165`（docs）／PrintAgent `6937fd5`/`1f4198a`（docs・配置方針）。
+- Nonaka/.kiro `c202af9`/`4a78275`/`3f89cf0`/`1b2f88f`＋本クローズ分（memo＋CoCore-Workspace.code-workspace）。
+
+### 状態（確定）
+- agent-service-manager：spec 完了・実装完了・ローカル/サーバ実機OK。
+- ワークスペースは `CoCore-Workspace.code-workspace`（3ルート）で一元管理。次回はこれを開いて作業。
+- 各新規 repo（AgentServiceManager 等）への remote 追加/push、AgentServiceManager.Tests の版管理要否＝ユーザー任意（未実施）。
+
+### 次セッションの候補
+- 各 repo の remote/push 整備、Tests 版管理方針。
+- 本番サーバへの Agent 発行物一式配置＋管理アプリからのリモート運用の本格運用。
+- 未実装案件一覧（MaterialModule G/F 等）の再開。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260710）。ワークスペースは CoCore-Workspace.code-workspace を使用。
