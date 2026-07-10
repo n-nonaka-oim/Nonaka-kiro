@@ -127,8 +127,24 @@ public interface IAgentStatusReader
 - `Manager:Targets` の各要素: `{ "Kind": "Smtp"|"Print", "Machine": "" , "BinPath": "..." }`（Machine 空=ローカル）。未設定時は Smtp@ローカル・Print@ローカルの2件を既定生成（後方互換）。
 - `AppConfig.Targets`（`IReadOnlyList<AgentTarget>`）として公開する。
 
+### 実行時ターゲット編集（入力UI・保存）
+- 画面上部に**対象追加パネル**: 種別（`ComboBox` Smtp/Print）＋対象マシン名（`TextBox`・空=ローカル）＋exe パス（`TextBox`・空=種別既定）＋「追加」ボタン。
+- 各行に「一覧から除外」ボタン（サービスは削除せず、画面の管理対象一覧から外すのみ）。
+- 「設定に保存」ボタンで現在の対象一覧を `appsettings.json` の `Manager:Targets` へ永続化（`ConnectionStrings`・他 `Manager` 設定は保持）。
+- 対象一覧はメモリ上の可変リスト `List<AgentTarget>` として保持し、追加/除外時に行を再構築（`RebuildRows`）。
+
+### `IConfigWriter`（設定保存）
+```csharp
+public interface IConfigWriter
+{
+    // appsettings.json の Manager:Targets のみを更新して保存（他ノードは保持）
+    void SaveTargets(string appSettingsPath, IReadOnlyList<AgentTarget> targets);
+}
+```
+- 実装は `System.Text.Json.Nodes.JsonNode` で既存 JSON を読み込み `Manager:Targets` を差し替えて書き戻す（`ConnectionStrings:CommonDb` 等を温存）。
+
 ### MainForm（UI）
-- 各ターゲット行（`TableLayoutPanel`）。列: エージェント名／**対象マシン（(local) or マシン名）**／サービス状態／ハートビート（ポーリング中|応答なし＋最終時刻ローカル）／滞留（待機・エラーを強調）／操作（開始/停止/登録/解除）。
+- 各ターゲット行（`TableLayoutPanel`・追加/除外で再構築）。列: エージェント名／**対象マシン（(local) or マシン名）**／サービス状態／ハートビート（ポーリング中|応答なし＋最終時刻ローカル）／滞留（待機・エラーを強調）／操作（開始/停止/登録/解除/一覧除外）。
 - `System.Windows.Forms.Timer` で `RefreshIntervalSeconds` ごとに全行更新。手動更新ボタンあり（R3.2/R3.3）。
 - ボタン押下は UI をブロックしないよう `async`（DB 読取・サービス待機は待ち時間があるため）。操作中は当該ボタンを無効化し、完了後に再取得。
 

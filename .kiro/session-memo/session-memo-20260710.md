@@ -95,8 +95,36 @@
 - `AgentServiceManager`／`AgentServiceManager.Tests` は**新規フォルダで git 未初期化**（配置 a＝新規 repo 予定）。→ ユーザー方針で `git init`＋remote 後に初回コミット、or 既存 WindowsService 運用に合わせる。
 - `Nonaka/.kiro`：agent-service-manager spec（req/design/tasks 改訂）＋session-memo(20260710) をコミット。
 
+### コミット済み（2026/07/10）
+- Nonaka/.kiro `c202af9`（agent-service-manager spec リモート改訂＋memo）。
+- AgentServiceManager 新規 repo 初期化＋初回コミット `77b3ef1`（23ファイル・push なし・remote 未設定）。※`AgentServiceManager.sln`/`.github` はユーザー生成分も含む。
+- AgentServiceManager.Tests は git 未管理のまま（WindowsService 配下テストの慣例）。
+
+---
+
+## task 9 追加：実行時ターゲット編集（入力UI・保存）＝ユーザー選択 b
+
+### 経緯
+- 「リモートはサーバ情報入力テキストボックス？」→ 現状は appsettings 駆動。ユーザーが **b（画面から入力・追加/除外・保存）** を選択。
+
+### spec 改訂（診断クリア）
+- requirements：**R11 新設**（実行時に種別/マシン/exeパス入力で追加・一覧除外・appsettings 保存・既定フォールバック）。
+- design：実行時ターゲット編集（入力UI）＋`IConfigWriter`＋MainForm 再構築方式。
+- tasks：**task 9**（9.1 ConfigWriter／9.2 入力UI＋動的行＋一覧除外／9.3 保存／9.4 CP）＋依存グラフ更新。
+
+### 実装（9.1〜9.3 完了）
+- `Services/ConfigWriter.cs`（`IConfigWriter`）：JsonNode で `Manager:Targets` のみ差し替え保存・ConnectionStrings 温存。
+- `MainForm` 改修：上部に対象追加パネル（種別 Combo/マシン/exeパス/追加/設定に保存）、`_grid` を可変 `List<AgentTarget>` から `RebuildRows` で再構築、各行「一覧除外」（サービス非削除）。保存は `AppContext.BaseDirectory\appsettings.json`。
+
+### ⚠ ユーザー
+- `dotnet build` 確認。9.4 CP：追加→行表示/操作対象化・一覧除外・「設定に保存」→再起動後も反映（保存先は実行フォルダの appsettings.json＝publish 済み配置で永続。`dotnet run` 時は bin 配下で再ビルドで上書きされる点に注意）。
+- 追加コミット（AgentServiceManager：ConfigWriter/MainForm 更新／Nonaka/.kiro：spec/memo）。
+
+### 実装ステータス（更新）
+- tasks 1〜7・8.1〜8.4・9.1〜9.3 完了。残＝8.5（リモート実機CP）・9.4（入力UI CP）＝ユーザー。
+
 ### 再開合図（更新）
-「再開します、session-memoを確認」。最新は本ファイル（20260710）。次＝コミット（新規プロジェクト git 初期化方針の確認）／8.5 リモート実機CP。
+「再開します、session-memoを確認」。最新は本ファイル（20260710）。次＝ユーザーのビルド/CP → 追加コミット。
 
 ### 運用メモ（継続）
 - spec は直接編集（サブエージェント不使用）。1ターン1タスク。ビルド/テストはユーザー。MainWeb/AuthModule/SharedCore 不変更。

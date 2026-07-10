@@ -120,3 +120,16 @@ CommonModule プラットフォームの2つの常駐 Windows サービス（`Co
 2. IF 対象マシンへ到達できない、または権限が不足する場合、THEN THE アプリ SHALL 当該行にエラー（状態「取得不可」等）を表示し、他ターゲットの表示・操作は継続する。
 3. THE アプリ SHALL 各行に対象マシン名を表示する（ローカルは「(local)」）。
 4. THE アプリ SHALL リモートでも登録/解除を `sc \\machine create/delete`・停止を `ServiceController(name, machine)` で行い、exe パスは対象マシン上のパスとして扱う。
+
+### Requirement 11: 対象（ターゲット）の実行時追加・編集・保存
+
+**User Story:** 運用担当者として、設定ファイルを直接編集せず、画面上でサーバ名等を入力して管理対象を追加・削除したい。
+
+#### Acceptance Criteria
+1. THE アプリ SHALL 画面上で「エージェント種別・対象マシン名・exe パス」を入力して対象を追加できる。
+2. THE アプリ SHALL 追加された対象を一覧行として即時に表示し、操作（起動/停止/登録/解除）の対象とする。
+3. THE アプリ SHALL 一覧から対象を除外（画面一覧からの削除）できる（Windows サービス自体は削除しない）。
+4. WHEN 保存操作が実行された場合、THE アプリ SHALL 現在の対象一覧を `appsettings.json` の `Manager:Targets` に永続化する（`ConnectionStrings`・他の `Manager` 設定は保持する）。
+5. IF 対象追加に必要な入力が不正（種別未選択等）である場合、THEN THE アプリ SHALL 追加せずメッセージを表示する。
+6. WHERE exe パスが未入力である場合、THE アプリ SHALL 種別の既定 binPath を用いる。
+7. WHERE 対象マシンが未入力である場合、THE アプリ SHALL ローカル対象として追加する。
