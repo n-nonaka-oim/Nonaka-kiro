@@ -161,3 +161,11 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260710）。次アクション＝tasks 1.2（AgentDescriptor）。
+
+---
+
+## 配置方針の確認：PrintAgent＋SumatraPDF はオンプレ同梱（クラウド移行時も）
+
+- SumatraPDF＝PDF「印刷」ツール（生成は QuestPDF・クラウド可）。サイレント印刷はオンプレプリンタ対象。
+- 決定：**PrintAgent と SumatraPDF は同一オンプレ機（プリンタ到達可）に同梱設置**。`SumatraPdfPath` はその機のローカルパス。Web/DB を AWS 化しても PrintAgent＋SumatraPDF はオンプレ据置（`t_print_queue` は DB 共有＝投入がクラウドでも PrintAgent がオンプレでポーリング印刷）。Linux クラウドでは SumatraPDF 不可。
+- docs 反映：`PrintAgent/docs/spec.md` 前提準備に「配置方針」注記。ユーザーは PrintAgent とリンクして管理する方針。
