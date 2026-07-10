@@ -123,8 +123,37 @@
 ### 実装ステータス（更新）
 - tasks 1〜7・8.1〜8.4・9.1〜9.3 完了。残＝8.5（リモート実機CP）・9.4（入力UI CP）＝ユーザー。
 
+### 追補：対象マシン名 正規化（自機/localhost/UNC→ローカル）
+- 事象：リモート欄に自機名 `OJIADM23120073` を入力 → `Cannot open Service Control Manager on computer 'OJIADM23120073'`（リモート SCM 経路になり追加権限要求）。UNC 入力は不要（bare 名でよい）。
+- 対応：`Logic/MachineNameNormalizer.Normalize(input, localMachineName)`（純粋）追加。先頭 `\\` 除去・`.`/`localhost`/自機名→null（ローカル扱い＝ローカル SCM 経路）。`MainForm.OnAddTarget`／`AppConfig.BuildTargets` に適用。machine 欄プレースホルダを「空/自機名=ローカル」に。
+- テスト：`AgentServiceManager.Tests/MachineNameNormalizerTests.cs`（自機/localhost/UNC→null・リモート名 trim）。
+- 真のリモート制御の前提（変わらず）：対象サーバの**管理者権限**＋**ファイアウォールで「リモート サービス管理(RPC)」許可**。自機は空欄/自機名でローカル動作。
+
+### ⚠ ユーザー（再確認）
+- 再ビルド → 自機名入力でもローカルとして動作するはず。別サーバ名は上記前提が満たされれば制御可能。
+- 追加コミット（MainForm/AppConfig/新規 Normalizer＋Tests・Nonaka/.kiro memo）。
+
+### リモート/ローカル実機トラブルシュート → 解決（CP 8.5/9.4 完了）
+実機確認で判明した事象と解決:
+1. リモートで「Cannot open SCM 'OJIADM23120073' … other privileges」→ 権限。ドメイン構成なので **d86223 を対象機ローカル Administrators に追加**＋クライアントで**管理者昇格実行**で解決（`sc.exe \\server query type= service` が列挙成功＝権限OKを確認）。UNC 入力は不要（bare 名。自機名/localhost/`\\`は正規化でローカル扱い）。
+2. ローカル起動 5（アクセス拒否）→ 非昇格。管理アプリは manifest で requireAdministrator だが `dotnet run`/非昇格 VS では昇格されない。exe 直接起動 or 管理者で実行。
+3. ローカル起動 1053（応答なし）→ 直接実行で `SmtpAgent.dll not found`/`runtimeconfig.json not found`。**配置先に exe 単体しか無い＝発行物不完全**が真因。`dotnet publish -c Release -o C:\SmtpAgent\App`（一式）で解決 → START_PENDING→RUNNING 確認。
+- docs 反映: PrintAgent/SmtpAgent `spec.md` に「トラブルシュート」（1053/5/SCM/1060）追記。
+
+### PowerShell 注意
+- PS では `sc` が `Set-Content` エイリアス。サービス操作は `sc.exe` を使う。
+
+### 実装ステータス（最終）
+- **agent-service-manager：tasks 全完了**（1〜9・7/8.5/9.4 の実機CP含む・サーバ/ローカル OK）。spec クローズ可。
+
+### 本日コミット（追記）
+- Nonaka/.kiro `c202af9`/`4a78275`（既）＋本追記分（tasks 完了・memo）。
+- AgentServiceManager `77b3ef1`/`3bc9267`（既）＋本追記分（MachineNameNormalizer・MainForm ヒント・AppConfig 正規化）。
+- PrintAgent/SmtpAgent：spec.md トラブルシュート追記（各 repo）。
+- ※AgentServiceManager.Tests は git 管理外の慣例（MachineNameNormalizerTests も同様）。
+
 ### 再開合図（更新）
-「再開します、session-memoを確認」。最新は本ファイル（20260710）。次＝ユーザーのビルド/CP → 追加コミット。
+「再開します、session-memoを確認」。最新は本ファイル（20260710）。agent-service-manager は実装・実機確認 完了。次テーマは未定。
 
 ### 運用メモ（継続）
 - spec は直接編集（サブエージェント不使用）。1ターン1タスク。ビルド/テストはユーザー。MainWeb/AuthModule/SharedCore 不変更。
