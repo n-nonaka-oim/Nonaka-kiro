@@ -5,8 +5,8 @@
 CommonModule プラットフォームの2つの常駐 Windows サービス（`CommonSmtpAgent`・`CommonPrintAgent`）を、運用担当者が1画面で**起動・停止・登録/解除・状態把握**できるようにする Windows デスクトップ管理アプリ（`agent-service-manager`）を定義する。
 
 - UI 技術: **WinForms（.NET 8）**。
-- 対象範囲: **ローカルマシン限定**（アプリが動作するサーバ自身のサービスと、そのサーバから見た共通DB `db_common_dev` を対象とする。リモートサーバ集中管理は対象外）。
-- 管理対象サービス: `CommonSmtpAgent`・`CommonPrintAgent`（`sc.exe`/`ServiceController` 名）。
+- 対象範囲: **ローカルおよびリモート（設定した複数サーバ）**。各対象（ターゲット）は「エージェント種別＋対象マシン＋既定 exe パス」で設定し、ローカル（マシン未指定）とリモート（マシン指定）を混在管理できる。共通DB `db_common_dev` は1つを共有参照する。
+- 管理対象サービス: `CommonSmtpAgent`・`CommonPrintAgent`（`sc.exe`/`ServiceController` 名）。リモートは `ServiceController(name, machine)`／`sc \\machine ...` で制御する。
 - 状態は2系統を統合表示する: (a) Windows サービス状態（`ServiceController`）、(b) DB ハートビート（`m_smtp_agent_control`/`m_print_agent_control`）＋キュー滞留件数（`t_smtp_queue`/`t_print_queue`）。
 - サービス制御・登録には**管理者権限（昇格）**が必要。
 
@@ -17,6 +17,8 @@ CommonModule プラットフォームの2つの常駐 Windows サービス（`Co
 - **応答しきい値**: ハートビートが「応答なし」と判定されるまでの経過秒数（既定 30 秒）。
 - **滞留件数**: キューの待機(status/print_status=1)等の状態別件数。
 - **登録/解除**: Windows サービスとしての install（`New-Service`/`sc create`）/uninstall（stop+`sc delete`）。
+- **ターゲット（対象）**: 「エージェント種別＋対象マシン＋既定 exe パス」の組。1つの画面行に対応する。
+- **対象マシン**: サービス制御・登録の対象マシン名。未指定/空はローカル。リモートは UNC 形式 `\\machine` を用いる。
 
 ## Requirements
 
@@ -25,8 +27,8 @@ CommonModule プラットフォームの2つの常駐 Windows サービス（`Co
 **User Story:** 運用担当者として、2つの Agent の状態を1画面で見たい。個別にサービスマネージャを開かずに済むように。
 
 #### Acceptance Criteria
-1. THE アプリ SHALL 起動時に `CommonSmtpAgent` と `CommonPrintAgent` の行を一覧表示する。
-2. THE アプリ SHALL 各行に「サービス名・サービス状態・ハートビート状態・滞留件数・操作ボタン」を表示する。
+1. THE アプリ SHALL 起動時に設定された全ターゲット（既定は `CommonSmtpAgent`・`CommonPrintAgent` のローカル2件）の行を一覧表示する。
+2. THE アプリ SHALL 各行に「エージェント名・対象マシン・サービス状態・ハートビート状態・滞留件数・操作ボタン」を表示する。
 3. WHERE サービスが未登録である場合、THE アプリ SHALL 当該行のサービス状態を「未登録」と表示する。
 
 ### Requirement 2: サービスの起動・停止
@@ -89,14 +91,16 @@ CommonModule プラットフォームの2つの常駐 Windows サービス（`Co
 2. IF 管理者権限なしで起動された場合、THEN THE アプリ SHALL その旨を表示する（または昇格を要求する）。
 3. THE アプリ SHALL サービス制御・登録/解除の失敗（権限起因を含む）をエラーとして表示する。
 
-### Requirement 8: ローカル限定・接続前提
+### Requirement 8: 対象サーバ（ローカル/リモート）・接続前提
 
-**User Story:** 運用担当者として、対象がこのサーバのサービスと DB であることを明確にしたい。
+**User Story:** 運用担当者として、ローカルだけでなく指定したサーバ上の Agent サービスも1つの画面から操作したい。
 
 #### Acceptance Criteria
-1. THE アプリ SHALL 制御対象をローカルマシンのサービスに限定する（リモート制御は行わない）。
-2. THE アプリ SHALL 共通DB 接続文字列を設定（`appsettings.json` 等）から読み込む。
-3. IF DB へ接続できない場合、THEN THE アプリ SHALL ハートビート/滞留件数を「取得不可」と表示し、サービス制御機能は継続して利用可能とする。
+1. THE アプリ SHALL 各ターゲットの対象マシンを設定で指定できる（未指定/空はローカル）。
+2. WHEN 対象マシンが指定されている場合、THE アプリ SHALL 当該マシンのサービスに対して状態取得・起動・停止・登録・解除を行う（`ServiceController(name, machine)`／`sc \\machine`）。
+3. THE アプリ SHALL 複数のターゲット（複数サーバ・複数エージェントの混在）を設定し一覧表示できる。
+4. THE アプリ SHALL 共通DB 接続文字列を設定（`appsettings.json` 等）から読み込み、ハートビート/滞留件数を `db_common_dev` から取得する。
+5. IF DB へ接続できない場合、THEN THE アプリ SHALL ハートビート/滞留件数を「取得不可」と表示し、サービス制御機能は継続して利用可能とする。
 
 ### Requirement 9: 変更範囲・非目標
 
@@ -104,5 +108,15 @@ CommonModule プラットフォームの2つの常駐 Windows サービス（`Co
 
 #### Acceptance Criteria
 1. THE アプリ SHALL 新規の独立プロジェクト（WinForms・.NET 8）として作成し、Agent 本体（SmtpAgent/PrintAgent）のコード・DB スキーマを変更しない。
-2. THE 本 spec SHALL リモートサーバ集中管理・キュー行単位の再送/削除（それは監視画面 `/Common/*Monitor` の役割）・ログビューアを対象外とする。
+2. THE 本 spec SHALL キュー行単位の再送/削除（それは監視画面 `/Common/*Monitor` の役割）・ログビューアを対象外とする。
 3. THE アプリ SHALL MainWeb・AuthModule・SharedCore を参照/変更しない。
+
+### Requirement 10: リモート操作の前提とエラー処理
+
+**User Story:** 運用担当者として、リモート対象への操作が失敗したときに原因が分かり、他対象の操作は止まらないようにしたい。
+
+#### Acceptance Criteria
+1. THE アプリ SHALL リモート操作の前提（実行ユーザーが対象マシンの管理者権限を持つこと・対象マシンへ RPC 到達可能でファイアウォールが許可されていること）を設定/ドキュメントに明記する。
+2. IF 対象マシンへ到達できない、または権限が不足する場合、THEN THE アプリ SHALL 当該行にエラー（状態「取得不可」等）を表示し、他ターゲットの表示・操作は継続する。
+3. THE アプリ SHALL 各行に対象マシン名を表示する（ローカルは「(local)」）。
+4. THE アプリ SHALL リモートでも登録/解除を `sc \\machine create/delete`・停止を `ServiceController(name, machine)` で行い、exe パスは対象マシン上のパスとして扱う。

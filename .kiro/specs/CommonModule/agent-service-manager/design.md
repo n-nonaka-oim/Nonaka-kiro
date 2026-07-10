@@ -2,13 +2,19 @@
 
 ## Overview
 
-`agent-service-manager` は、CommonModule プラットフォームの2常駐サービス（`CommonSmtpAgent`・`CommonPrintAgent`）をローカルマシン上で管理する **WinForms（.NET 8）** デスクトップアプリである。1画面で以下を提供する。
+`agent-service-manager` は、CommonModule プラットフォームの常駐サービス（`CommonSmtpAgent`・`CommonPrintAgent`）を**ローカルおよびリモート（設定した複数サーバ）**で管理する **WinForms（.NET 8）** デスクトップアプリである。1画面で以下を提供する。
 
-- サービスの起動/停止（`System.ServiceProcess.ServiceController`）
-- サービスの登録/解除（install/uninstall。既存 `install-service.ps1`/`uninstall-service.ps1` と同等）
+- サービスの起動/停止（`System.ServiceProcess.ServiceController`。リモートは `ServiceController(name, machine)`）
+- サービスの登録/解除（install/uninstall。ローカルは `sc create/delete`、リモートは `sc \\machine create/delete`。既存 `install-service.ps1`/`uninstall-service.ps1` と同等）
 - サービス状態・DB ハートビート・キュー滞留件数の統合表示（定期自動更新）
 
-対象は**ローカルのみ**。Agent 本体（SmtpAgent/PrintAgent）のコード・DB スキーマは変更しない。共通DB `db_common_dev` へは**読み取り専用**でアクセスする。
+各行は**ターゲット**（エージェント種別＋対象マシン＋既定 exe パス）に対応する。対象マシン未指定はローカル。Agent 本体（SmtpAgent/PrintAgent）のコード・DB スキーマは変更しない。共通DB `db_common_dev`（1つを共有）へは**読み取り専用**でアクセスする。
+
+### リモート対応の前提（重要）
+- 実行ユーザーが**対象マシンの管理者権限**を持つこと（同一ドメイン/同一資格情報を想定）。
+- 対象マシンへ **RPC 到達可能**（サービス制御は SCM への RPC。ファイアウォールで「リモート サービス管理」/RPC を許可）。
+- exe パスは**対象マシン上のパス**として扱う（sc create の binPath はリモート機のローカルパス）。
+- 到達不可/権限不足の対象はエラー表示にとどめ、他ターゲットの表示・操作は継続する。
 
 ## Architecture
 
@@ -34,15 +40,20 @@ flowchart TB
 - UI（MainForm）が定期タイマーで3つの情報源（SCM 状態・DB ハートビート・DB 滞留件数）を集約し、2行（Smtp/Print）のグリッド/カードに表示する。
 - サービス制御・登録は昇格前提。DB アクセスは読み取り専用（`AsNoTracking`）。
 
-## 対象サービス定義（固定・ローカル）
+## エージェント種別とターゲット
 
-| 論理名 | サービス名 | 既定 exe パス | heartbeat テーブル | queue テーブル / 状態列 |
+### エージェント種別（`AgentDescriptor`・固定定義）
+| 種別 | サービス名 | 既定 exe パス | heartbeat テーブル | queue テーブル / 状態列 |
 |---|---|---|---|---|
-| SmtpAgent | `CommonSmtpAgent` | `C:\SmtpAgent\App\SmtpAgent.exe` | `m_smtp_agent_control` | `t_smtp_queue` / `status` |
-| PrintAgent | `CommonPrintAgent` | `C:\PrintAgent\App\PrintAgent.exe` | `m_print_agent_control` | `t_print_queue` / `print_status` |
+| Smtp | `CommonSmtpAgent` | `C:\SmtpAgent\App\SmtpAgent.exe` | `m_smtp_agent_control` | `t_smtp_queue` / `status` |
+| Print | `CommonPrintAgent` | `C:\PrintAgent\App\PrintAgent.exe` | `m_print_agent_control` | `t_print_queue` / `print_status` |
 
 - 状態値は共通: 1=待機 / 2=処理中 / 3=完了 / 9=エラー（print は 0=対象外 も存在）。
-- 上記は `AgentDescriptor`（後述）として定数/設定で保持する。
+
+### ターゲット（`AgentTarget`・設定由来・画面1行に対応）
+- ターゲット = エージェント種別（`AgentDescriptor`）＋**対象マシン名**（空=ローカル）＋**exe パス**（対象マシン上のパス・既定は種別の規定値）。
+- 設定 `Manager:Targets`（配列）で複数指定できる。未設定時の既定は「Smtp@ローカル」「Print@ローカル」の2件（＝従来のローカル動作と後方互換）。
+- 同一 DB を共有するため、ハートビート/滞留件数は DB 由来で全ターゲット共通に見える（同一エージェントを複数マシンで動かす構成は非推奨＝キュー競合。通常は1エージェント=1マシン）。
 
 ## Components and Interfaces
 
@@ -57,30 +68,45 @@ public sealed record AgentDescriptor(
     string QueueStatusColumn); // status / print_status
 ```
 
+### AgentTarget（設定由来・画面1行）
+```csharp
+public sealed record AgentTarget(
+    AgentDescriptor Agent,   // エージェント種別
+    string? MachineName,     // 空/null=ローカル、指定=リモート機
+    string BinPath)          // 対象マシン上の exe パス（既定は Agent.DefaultBinPath）
+{
+    public bool IsLocal => string.IsNullOrWhiteSpace(MachineName);
+    public string MachineLabel => IsLocal ? "(local)" : MachineName!;
+}
+```
+
 ### IServiceControlService（サービス起動/停止/状態）
 ```csharp
 public enum AgentServiceState { NotInstalled, Running, Stopped, StartPending, StopPending, Other }
 
 public interface IServiceControlService
 {
-    AgentServiceState GetState(string serviceName);
-    void Start(string serviceName, TimeSpan timeout);   // 停止中のみ。完了待ち
-    void Stop(string serviceName, TimeSpan timeout);    // 実行中のみ。完了待ち
+    // machineName: 空/null=ローカル、指定=リモート（ServiceController(name, machine)）
+    AgentServiceState GetState(string serviceName, string? machineName);
+    void Start(string serviceName, string? machineName, TimeSpan timeout);   // 停止中のみ。完了待ち
+    void Stop(string serviceName, string? machineName, TimeSpan timeout);    // 実行中のみ。完了待ち
 }
 ```
-- 実装は `ServiceController`。未登録は `NotInstalled`（`ServiceController` 列挙に無い/例外を吸収）。
+- 実装は `ServiceController`（ローカル＝`new ServiceController(name)`／リモート＝`new ServiceController(name, machine)`）。未登録・到達不可は `NotInstalled`/例外吸収。
 - `Start/Stop` は `WaitForStatus` でタイムアウト付き待機（R2.3/R2.5）。
 
 ### IServiceInstallService（登録/解除）
 ```csharp
 public interface IServiceInstallService
 {
-    void Install(string serviceName, string binPath, string displayName, string description); // 自動起動＋障害時再起動
-    void Uninstall(string serviceName); // stop→delete
+    // machineName: 空/null=ローカル、指定=リモート（sc \\machine ...）
+    void Install(string serviceName, string? machineName, string binPath, string displayName, string description);
+    void Uninstall(string serviceName, string? machineName); // stop→delete
 }
 ```
-- 実装方針: `sc.exe`（create/failure/delete）または `New-Service`＋`sc.exe failure` を子プロセス実行。内容は既存 `install-service.ps1`/`uninstall-service.ps1` と同等（自動起動・5秒×3回の再起動）。
-- Install 前チェック: exe 存在（R4.4）・既存サービス無し（R4.5）。
+- 実装方針: `sc.exe`（create/failure/delete）を子プロセス実行。リモートは先頭引数に `\\machine` を付与。内容は既存 `install-service.ps1`/`uninstall-service.ps1` と同等（自動起動・5秒×3回の再起動）。
+- Install 前チェック: 既存サービス無し（R4.5）。exe 存在チェック（R4.4）は**ローカル対象時のみ**（リモートのファイル存在はローカルから判定できないため、リモートは sc の結果で判断）。
+- リモート停止は `ServiceController(name, machine)`、削除・作成は `sc \\machine`。
 
 ### IAgentStatusReader（DB ハートビート/滞留件数・読み取り専用）
 ```csharp
@@ -97,10 +123,12 @@ public interface IAgentStatusReader
 - DB 接続不可時は `DbReachable=false`（Heartbeat/Queue は不明扱い）で返し、例外を UI に伝播させない（R8.3）。
 
 ### AppConfig（設定）
-- `appsettings.json`: `ConnectionStrings:CommonDb`（`db_common_dev`）／`Manager:RefreshIntervalSeconds`(既定5)／`Manager:ResponsiveThresholdSeconds`(既定30)／各 Agent の既定 binPath。
+- `appsettings.json`: `ConnectionStrings:CommonDb`（`db_common_dev`）／`Manager:RefreshIntervalSeconds`(既定5)／`Manager:ResponsiveThresholdSeconds`(既定30)／`Manager:Targets`（配列）。
+- `Manager:Targets` の各要素: `{ "Kind": "Smtp"|"Print", "Machine": "" , "BinPath": "..." }`（Machine 空=ローカル）。未設定時は Smtp@ローカル・Print@ローカルの2件を既定生成（後方互換）。
+- `AppConfig.Targets`（`IReadOnlyList<AgentTarget>`）として公開する。
 
 ### MainForm（UI）
-- 2つの Agent 行（`DataGridView` かカード×2）。列: 論理名／サービス状態／ハートビート（ポーリング中|応答なし＋最終時刻ローカル）／滞留（待機・エラーを強調、詳細ツールチップ）／操作（開始/停止/登録/解除）。
+- 各ターゲット行（`TableLayoutPanel`）。列: エージェント名／**対象マシン（(local) or マシン名）**／サービス状態／ハートビート（ポーリング中|応答なし＋最終時刻ローカル）／滞留（待機・エラーを強調）／操作（開始/停止/登録/解除）。
 - `System.Windows.Forms.Timer` で `RefreshIntervalSeconds` ごとに全行更新。手動更新ボタンあり（R3.2/R3.3）。
 - ボタン押下は UI をブロックしないよう `async`（DB 読取・サービス待機は待ち時間があるため）。操作中は当該ボタンを無効化し、完了後に再取得。
 
@@ -132,7 +160,8 @@ SELECT {statusCol} AS s, COUNT(*) FROM {QueueTable} GROUP BY {statusCol}
 - `t_smtp_queue`（状態列 `status`） / `t_print_queue`（状態列 `print_status`）: 状態別件数の集計にのみ使用（行内容は参照しない）。状態値 1=待機/2=処理中/3=完了/9=エラー（print は 0=対象外 も存在）。
 
 ### アプリ内モデル（メモリ上・DTO）
-- `AgentDescriptor`（対象定義・不変値。サービス名/既定binPath/テーブル名/状態列）。
+- `AgentDescriptor`（種別定義・不変値。サービス名/既定binPath/テーブル名/状態列）。
+- `AgentTarget`（設定由来。種別＋対象マシン＋exe パス。画面1行に対応）。
 - `AgentServiceState`（列挙: NotInstalled/Running/Stopped/StartPending/StopPending/Other）。
 - `HeartbeatInfo`（LastHeartbeatUtc, MachineName, IsResponsive）。
 - `QueueCounts`（Waiting, Processing, Done, Error）。
@@ -165,6 +194,7 @@ SELECT {statusCol} AS s, COUNT(*) FROM {QueueTable} GROUP BY {statusCol}
 - 登録/解除失敗（exe 不在・既存・権限）: 実行前チェックで弾くかメッセージ表示（R4.4/R4.5）。
 - DB 接続不可: `DbReachable=false` として「取得不可」表示。サービス制御機能は継続（R8.3）。
 - 非管理者起動: マニフェスト `requireAdministrator` で昇格要求。昇格不可時はその旨表示（R7.1/R7.2）。
+- リモート到達不可/権限不足: 対象マシンの `ServiceController`/`sc \\machine` が例外・非0終了 → 当該行を「取得不可」/エラー表示にとどめ、他ターゲットの表示・操作は継続（R10.2）。原因（RPC 到達不可・管理者権限・ファイアウォール）を README/設定に明記（R10.1）。
 
 ## Testing Strategy
 
