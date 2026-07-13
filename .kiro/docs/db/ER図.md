@@ -215,7 +215,7 @@ erDiagram
 | m_usage_categories | 用途区分マスタ | 品目分類 |
 | m_usage2_categories | 用途2区分マスタ | 品目分類 |
 | m_usage3_categories | 用途3区分マスタ | 品目分類 |
-| m_company_info | 自社情報マスタ | 帳票ヘッダ |
+| m_general_personal_info | 自社情報マスタ（旧 m_company_info） | 帳票ヘッダ・送信差出人FB |
 | m_report_notes | 帳票備考マスタ | 帳票フッター |
 | m_user_preferences | ユーザー設定 | 画面設定保存 |
 | m_print_output_path | 印刷出力パスマスタ | 印刷出力(PDF)保存先ベースパス保持（独立・リレーションなし） |
