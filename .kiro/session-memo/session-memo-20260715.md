@@ -126,3 +126,131 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は 20260715。次アクション＝MaterialModule report-print-routing 実装 task1 から（1→2→3→…）。CommonModule 分のコミットも要（ユーザー承認）。
+
+---
+
+## コミット済み（2026/07/15）＋MaterialModule report-print-routing 実装 task1〜5 完了
+
+### コミット
+- CommonModule `0baf025`（printer-list-query：IPrinterQueryService/PrinterInfo/PrinterQueryService＋DI）。
+- Nonaka/.kiro `ca5e9f6`（spec 2件＋session-memo 0713-0715）。※`steering/Agnet.md` は無関係のため未コミット（保留）。
+
+### MaterialModule report-print-routing 実装（task1〜5・診断クリア）
+- **task1** エンティティ＋DbContext：`Data/Entities/MUserPrintSetting.cs`（m_user_print_setting・user_code×report_type→printer_name）・`MPrintSystemSetting.cs`（m_print_system_setting・report_type/external_output_enabled/printer_name）。`MaterialDbContext` に DbSet 2件＋一意index（uq_m_user_print_setting_01＝user_code,report_type／uq_m_print_system_setting_01＝report_type）。
+- **task2** スキーマSQL：`docs/sql/create_m_user_print_setting.sql`・`create_m_print_system_setting.sql`（冪等・ユーザー適用）。
+- **task3** 純粋ロジック：`Logic/PrintRoutingRules.cs`（`OutputKinds`[Flags]／`ResolveOutputKinds`／`ShouldExternalOutput`）。
+- **task4*** PBT：`MaterialModule.Tests/ReportPrintRouting/PrintRoutingRulesPropertyTests.cs`（P1 方式判定全域／P2 外部出力ゲート）。※Nonaka\MaterialModule.Tests に配置。
+- **task5** Resolver：`Services/IPrintOutputResolver.cs`＋`PrintOutputResolver.cs`（ResolveUserPrinterAsync/ResolveSystemSettingAsync/ResolveSelfEmailAsync＝ISenderInfoResolver再利用）＋`MaterialModuleExtensions` に Scoped 登録。
+
+### ⏳ ユーザー（ここで一度ビルド確認推奨）
+- slnCoCore ビルドで task1〜5 が通ることを確認（DBは task2 SQL 未適用でもビルドは通る）。
+
+### 残タスク（UI/挙動・次バッチ）
+- 6 自己サービス画面（PrintSettings/Index）／7 PDFエージェント投入 printer_name 反映（7.1 Orders承認・7.2 Dispatches(ii)）／8 PDFプリント導線（8.1 Orders/8.2 Dispatches(i)/8.3 Receivings）／9 Dispatches 2カ所統合／10 テスト出力CB（10.1 Orders/10.2 Dispatches）／11 ビルドCP／12 docs。
+- 実装時に既存ページ（Approvals/PrintJobService・Dispatches/Index・Orders/Create・Receivings）の読込・改修が必要。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260715。report-print-routing：task1〜5 完了・要ビルド確認 → task6 以降（UI/投入）。
+
+---
+
+## report-print-routing 実装 task6 完了（2026/07/15）
+
+- **task6** 自己サービス画面：`Areas/Material/Pages/PrintSettings/Index.cshtml(.cs)`。ログインユーザーの `m_user_print_setting` を帳票種別（order_approval/dispatch_request/receiving）ごとに select で設定・保存。選択元＝`IPrinterQueryService.GetAvailablePrintersAsync`（value=printer_name／text=「printer（machine）」）。「(未設定)」選択で既存行削除。DbUpdateConcurrencyException 捕捉。`[Authorize(Policy="DbPermissionCheck")]`・_MaterialStyles・フォント規約準拠。診断クリア。
+- ※メニュー表示/認可（m_content・r_content_auth）はユーザー側対応（本ページのアクセス制御はスコープ外）。
+
+### ⏳ ユーザー（ビルド確認推奨）
+- slnCoCore ビルド。DB未適用（task2 SQL）だと画面の保存/表示は実行時エラーになる点に注意（ビルドは通る）。動作確認は SQL 適用後。
+
+### 🟡 task7 着手前の確認（承認時挙動）
+- task7.1（Orders/Create 承認時 PDFエージェント投入）：**発注者(user_id)×order_approval の割当プリンタが未設定**の場合の扱い。
+  - 案A：承認は成立させ、印刷投入のみスキップ＋警告/ログ（design 初期案）。
+  - 案B：承認前にエラーで止める（R5「クライアントエラー」に厳密準拠）。
+  - ※承認は Approvals ページで実行。現行 `PrintJobService.CreateOrderApprovalJobsAsync` は printerName=null（サーバ既定）で投入 → これを解決値へ変更する。
+- この方針を確定後、task7（PrintJobService 改修）に着手。
+
+### 残タスク
+- 7 PDFエージェント投入 printer_name 反映（7.1 Orders承認/7.2 Dispatches(ii)）／8 PDFプリント導線／9 Dispatches2カ所／10 テスト出力CB／11 ビルドCP／12 docs。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260715。report-print-routing：task1〜6 完了。次＝task7（承認時未割当の扱い 案A/B 確定→PrintJobService 改修）。
+
+---
+
+## report-print-routing 実装 task7.1 完了＋案B確定（2026/07/15）
+
+- **承認時未割当の扱い＝案B（承認前ブロック＋通知）に確定**。要件 R7.4/7.5 追記。
+- **task7.1 実装**：
+  - `ApprovalService`：`IPrintOutputResolver` 注入。`EnsurePrinterAssignedAsync(orders)` を追加＝出力区分が印刷含む(1/3)発注につき発注者×`order_approval` の割当を検証、未設定は `InvalidOperationException`（メッセージに未設定の発注者/品目を列挙）。`ApproveOrderAsync`（承認前に対象1件検証）・`ApproveOrdersAsync`（状態変更前に一括検証）へ差し込み。Approvals ページは既存の `catch(InvalidOperationException)→ErrorMessage` で通知。
+  - `PrintJobService`：`IPrintOutputResolver` 注入。出力区分1/3 で printer_name＝発注者×order_approval 割当を解決して `EnqueueAsync(printerName 指定)`（従来 null＝サーバ既定を廃止）。未設定は防御的にスキップ＋Warning。
+  - 全ファイル診断クリア。
+
+### Dispatches 現状の把握（task7.2/8.2/9 の前提）
+- `Dispatches/Index.cshtml.cs` に **`GenerateDispatchPdf`（原材料工場入請求PDF）既存**。`OnPostSubmitAsync`（請求）で **`PdfOutput` チェック時に `File(pdf)` 返却＝(i) PDFプリントは実質実装済み**（ダウンロード→ダイアログ印刷）。
+- 残実装（7.2/9）：同じ PDF バイトを使い、**外部出力ON時に (ii) PDFエージェント投入**（固定パス保存＋`IPrintQueueService.EnqueueAsync(system printer_name)`）。二重生成回避＝生成は1回、(i)返却と(ii)投入で共用。
+  - Dispatches ページに `IPrintOutputResolver`・`IPrintQueueService`・`IPrintOutputPathService` 注入が必要。保存は PrintOutputPathService の base path 配下へ（dispatch_request_{ref}_{timestamp}.pdf）。
+
+### ⏳ ユーザー（ビルド確認推奨）
+- slnCoCore ビルドで task7.1（ApprovalService/PrintJobService 改修）が通ることを確認。※DBは task2 SQL 未適用でもビルドは通るが、実動作（承認/画面）は SQL 適用後。
+
+### 残タスク
+- 7.2 Dispatches(ii) PDFエージェント／8.1 Orders PDFプリント導線／8.2 Dispatches(i)=既存 PdfOutput で概ね充足（整理）／8.3 Receivings=既存 OnGetExportPdfAsync／9 Dispatches 2カ所統合／10 テスト出力CB（10.1 Orders/10.2 Dispatches）／11 ビルドCP／12 docs。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260715。report-print-routing：task1〜6＋7.1 完了。次＝7.2/9（Dispatches(ii) PDFエージェント）→ 8.1（Orders PDFプリント導線）→ 10（テスト出力CB）→ 12 docs。
+
+---
+
+## report-print-routing 実装 task7.2/8/9 完了（2026/07/15）
+
+- **task7.2＋9（Dispatches）**：`OnPostSubmitAsync` を改修。`IPrintOutputResolver`/`IPrintQueueService`/`IPrintOutputPathService` を注入。
+  - システム設定 `m_print_system_setting`(dispatch_request) を解決 → `PrintRoutingRules.ShouldExternalOutput` で判定。
+  - PDF は **PdfOutput または 外部出力ON のとき1回だけ生成**（二重生成回避）。
+  - (ii) 外部出力ON：固定パス（`IPrintOutputPathService.GetBasePathAsync`＋`PrintOutputPathService.BuildFullPath`）へ保存し `IPrintQueueService.EnqueueAsync("material","dispatch_request",ref,fullPath,sysSetting.PrinterName,1)`。**投入失敗は請求（在庫減算・状態更新）を取り消さない**（ログのみ）。
+  - (i) PdfOutput：従来どおり `File(pdf)` 返却＝PDFプリント。両立で2カ所出力。
+- **task8（PDFプリント導線）＝既存で充足**：発注書=承認経路のエージェント＋手動DL既存(`Approvals.OnGetDownloadPdfAsync`)／Dispatches(i)=既存 PdfOutput→File／Receivings=既存 `OnGetExportPdfAsync`。新規導線不要と判断。
+- 診断クリア。
+
+### 最終マトリクスとの整合（重要）
+- **発注書(Orders/Create) に PDFプリントは無い**（初期表の「1=印刷(PDFプリント)」は Q1 で PDFエージェントに確定）。出力は承認経路（PDFエージェント/SMTPエージェント）。手動DLは既存。
+
+### 残タスク
+- 10 テスト出力CB（エージェント時のみ）／11 ビルドCP／12 docs。
+
+### 🟡 task10 の配置＝要確認
+- テスト出力（ユーザーサイド テスト印刷/テストSMTP）の実装場所:
+  - 案X：Orders/Create（＆Dispatches）に「テスト出力」CB＝本番フロー（承認/請求）をバイパス（7/14表の記述）。
+  - 案Y：**`PrintSettings` 自己サービス画面に「テスト印刷」「テストメール送信」ボタン**を置く（自己完結・シンプル・「ユーザーが疎通確認」の主旨に合致）。
+- 推奨＝案Y。要ユーザー確認。
+
+### ⏳ ユーザー（ビルド確認推奨）
+- slnCoCore ビルドで task7.2/9（Dispatches 改修）が通ることを確認。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260715。report-print-routing：task1〜9 完了。次＝task10（テスト出力・配置 案X/Y 確定）→ 11 ビルド → 12 docs。
+
+---
+
+## report-print-routing 実装 task10（テスト出力＝案Y）＋task12（docs）完了（2026/07/15）
+
+- **task10 案Y（PrintSettings に集約・新規ページなし）**：`PrintSettings/Index` に追加。
+  - `IPrintOutputResolver`/`IPrintQueueService`/`ISmtpQueueService`/`ISendConfigService`/`IPrintOutputPathService` を注入。
+  - **テスト印刷**（帳票行ごとボタン・`OnPostTestPrintAsync(reportType)`）：保存済み割当プリンタへ簡易テストPDF（QuestPDF）を固定パス保存＋`EnqueueAsync(printer)`。本番フロー非経由。未割当はエラー通知。
+  - **テストメール送信**（`OnPostTestMailAsync`）：`ResolveSelfEmailAsync`（ApplicationUser.Email→マスタ email/DEFAULT）の自分宛へ `smtpQueue.EnqueueAsync(module:"material", configKey:"mail", fromAddress=SendConfig.FromAddress, recipient=自分)`。本番宛先へ送らない。宛先/送信元未設定はエラー。
+  - ※CommonModule SendConfig のテスト送信作法（configKey "mail"/"fax"・fromAddress=SendConfig）を踏襲。
+- **task12 docs**：`テーブル定義書.md`（一覧＋2セクション）・`ER図.md`（一覧）・`ER図.mmd`（エンティティ）に `m_user_print_setting`・`m_print_system_setting` 反映。
+- 全ファイル診断クリア。
+
+### 実装ステータス（report-print-routing）
+- **task 1〜12 完了**（8 は既存機能で充足・10 は案Y）。残＝**task11（ユーザー：ビルド＋SQL適用＋実機）**。
+- 未実装だった Orders/Create 側のテスト出力CB（案X）は**案Y採用により不要**（PrintSettings に集約）。
+
+### ⏳ ユーザー（task11 CP）
+1. slnCoCore ビルド。
+2. **SQL適用**：`create_m_user_print_setting.sql`・`create_m_print_system_setting.sql`（db_material_dev）。※未適用だと PrintSettings 画面・承認前チェック・Dispatches外部出力が実行時エラー。
+3. 認可：PrintSettings ページを m_content/r_content_auth に登録（ユーザー対応）。
+4. 実機確認：印刷設定の保存・テスト印刷・テストメール／承認時の未設定ブロック／Dispatches 外部出力ON時の(ii)投入。
+5. `m_print_system_setting` に dispatch_request 行を投入（外部出力ON＋printer_name）で(ii)有効化。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260715。report-print-routing：実装 task1〜12 完了・残 task11（ユーザー）。CommonModule printer-list-query は完了・コミット済み。次セッションはコミット（MaterialModule/Nonaka）＋実機確認から。

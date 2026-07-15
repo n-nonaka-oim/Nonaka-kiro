@@ -94,6 +94,20 @@ erDiagram
         string email
     }
 
+    m_user_print_setting {
+        int id PK
+        string user_code
+        string report_type
+        string printer_name
+    }
+
+    m_print_system_setting {
+        int id PK
+        string report_type
+        bool external_output_enabled
+        string printer_name
+    }
+
     m_report_notes {
         int id PK
         string report_type

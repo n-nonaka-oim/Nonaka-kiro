@@ -216,6 +216,8 @@ erDiagram
 | m_usage2_categories | 用途2区分マスタ | 品目分類 |
 | m_usage3_categories | 用途3区分マスタ | 品目分類 |
 | m_general_personal_info | 自社情報マスタ（旧 m_company_info） | 帳票ヘッダ・送信差出人FB |
+| m_user_print_setting | ユーザー印刷設定 | 帳票別PDFエージェント出力プリンタ |
+| m_print_system_setting | システム印刷設定 | 外部出力フラグ＋プリンタ |
 | m_report_notes | 帳票備考マスタ | 帳票フッター |
 | m_user_preferences | ユーザー設定 | 画面設定保存 |
 | m_print_output_path | 印刷出力パスマスタ | 印刷出力(PDF)保存先ベースパス保持（独立・リレーションなし） |
