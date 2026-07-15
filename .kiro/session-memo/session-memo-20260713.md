@@ -295,3 +295,62 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260713）。order-report-sender-info 実装・実機OK。次テーマ未定。
+
+---
+
+## 🟡 次テーマ：印刷（PDF出力）方式の協議メモ（2026/07/13・未確定・spec未着手）
+
+前提：ユーザーは「印刷・SMTP送信テスト機能」を実装予定。その前段として **PDF印刷方式の方針協議**を実施。要件確定は次回。
+
+### 確定した技術評価（事実）
+- **ブラウザ単体ではサイレント（ダイアログなし）印刷は不可**（仕様上ブロック。Chrome kiosk 等は業務常用に不適）。無確認印刷＝**PrintAgent 一択**。
+- 現行 **PrintAgent サイレント印刷の実挙動**（`\\...\WindowsService\PrintAgent`）:
+  - `Services/SilentPrintService.cs`：`SumatraPDF.exe -print-to "プリンタ名" -silent -exit-when-done [.-print-settings "Nx"]`。**必ずプリンタ名指定**（-print-to-default は使っていない）。
+  - `Workers/PrintJobWorker.cs`：`t_print_queue` を print_status=1 でポーリング。プリンタ解決＝**printer_name 指定→当該／NULL→サーバ既定（config `PrintAgent:DefaultPrinterName`）**。**指定済みだが稼働機に未インストール→status=9 エラー（既定へフォールバックしない）**。存在判定は `PrinterSettings.InstalledPrinters` 実列挙。
+  - → 「未到達/未インストール時もサーバ既定へ」を望むなら **PrintAgent 改修が必要**（別repo/別spec）。
+- **CommonModule（Nonaka\CommonModule）の公開状況**（MaterialModule は ProjectReference 済）:
+  - 投入：`IPrintQueueService.EnqueueAsync(module, reportType, referenceCode, pdfPath, printerName?, copies, ct)` … **printer_name 指定投入可**。
+  - プリンタ一覧：**read 用の公開I/Fは無し**。データは `m_printer`（`CommonDbContext.Printers`・PrintAgent 棚卸しが投入）に在るが外部提供I/F未整備。
+  - `CommonDbContext` DbSet：SmtpQueue/SmtpConfigs/SmtpAgentControls/PrintQueue/PrintAgentControls/**Printers(m_printer)**/SendConfigs。
+- MaterialModule 側 PDF 保管：`m_print_output_path` で固定管理（`\\OJIADM23120073\app_share\PrintAgent\`）。全帳票PDF保持。
+- 現状 MaterialModule の印刷投入：`PrintJobService.CreateOrderApprovalJobsAsync` は `printerName: null`（＝サーバ既定）で投入。OutputType 0=保存のみ/1=印刷/2=FAX(印刷スキップ)/3=印刷+FAX。
+
+### 方針の転換（ユーザー最新の考え）＝ジョブを出力先性質で二分
+- **(A) サイレントPDF出力Job（他部署／共有プリンタ）**：出力先＝**サーバ登録済みプリンタ**（例 Printer_D）。経路＝**PrintAgent**（printer_name 指定・無確認）。単位は**個人でなく帳票/部署等**で管理者割当（要確認②）。
+- **(B) ローカルPCのデフォルトプリンタへ出力するJob**：操作ユーザー自身の端末既定プリンタ。方式2択（**要確認①**）:
+  - (B-1) ブラウザ経路（推奨）：PDF生成→表示/DL→**印刷ダイアログで既定プリンタへ**。サーバ登録不要・導入ゼロ・**ダイアログは出る**。CommonModule連携も個人登録も不要。
+  - (B-2) サイレント維持：各ユーザーのローカル既定を共有＋PrintAgent機に登録＋個人マッピング（運用重い）。
+- **Dispatches は (A)＋(B) の2カ所出力**（Printer_D サイレント＋手元既定）。
+
+### 対象帳票（ユーザー提示の表）
+- (B) ローカル既定：Orders/Create=発注書兼納入仕様書／Receivings=入庫伝票／Dispatches=原材料工場入請求。PDF保管=`\\OJIADM23120073\app_share\PrintAgent\`。
+- (A) サーバ登録：Dispatches=原材料工場入請求→Printer_D（サーバサイド登録プリンタ）。
+- Orders/Create の適用＝「出力区分(OutputType)に準ずる」。
+
+### デュアル方式の暫定ポリシー（ユーザー回答済み・(B)方式のみ未確定）
+1. サイレント対象プリンタの登録単位＝当初「個人」→ 転換後は (A)=帳票/部署単位・(B-1)なら登録不要（**②で再確認**）。
+2. モード選択の主体＝**管理者**（ユーザーにサーバ登録をさせない）。
+3. フォールバック＝未登録(printer_name 空)→サーバ既定（現行と一致）。未到達→現行はエラー（(a)既定フォールバックはPrintAgent改修／(b)エラー通知 の判断＝**要確認**）。
+4. 対象帳票＝上記表。
+5. PDF出力ダイアログなし可否＝**ブラウザは不可・PrintAgentのみ可**（回答済）。PDF保管先＝固定（回答済）。
+
+### 🔴 次回の確定すべき事項（要件クローズ前）
+- **①(B) の方式**：B-1（ブラウザ・ダイアログあり・登録不要／推奨）か B-2（サイレント・個人登録あり）か。
+- **②(A) の割当単位**：帳票ごと／部署（送付先/工場）ごと（個人ではない）で良いか。
+- **③ Dispatches 2カ所出力**：(A)Printer_D サイレント＋(B)手元既定 で確定か。
+- **④ 未到達時フォールバック**：サーバ既定へ(要PrintAgent改修) か エラー通知留め か。
+- **⑤ CommonModule への read I/F 追加可否**：`IPrinterQueryService.GetAvailablePrintersAsync(machineName?)`（m_printer 読み取り公開）を許可するか。許可しない場合は MaterialModule に db_common `m_printer` 読み取り専用 DbContext（インターフェース経由でない点がトレードオフ）。※(B-1)採用なら (A) 用途に限定。
+- **⑥ (A) 割当マスタの所属**：MaterialModule 側テーブル（例 `m_print_routing`：report_type/section→printer_name 等）で持つ想定。
+- **⑦ SMTP送信テスト機能**：当初ユーザーが挙げた「印刷・SMTP送信テスト機能」の要件は未着手（別途 or 本テーマと統合か要整理）。CommonModule 側に `docs/smtp-sender実送信テスト手順.md`・`SendConfig` テスト送信（TestFaxNumber/TestEmail）既存あり。
+
+### 想定 spec 分割（未作成）
+- CommonModule spec：プリンタ一覧 read I/F 追加（(A)用・⑤次第）／必要なら PrintAgent 未到達フォールバック改修（④次第・PrintAgent repo）。
+- MaterialModule spec：(A) 割当＋PrintAgent投入／(B) ブラウザ印刷導線／Dispatches 2カ所出力／OutputType連動／PDF保管固定。
+
+### 参照ファイル（今回確認済み）
+- `WindowsService\PrintAgent\Services\SilentPrintService.cs`・`Workers\PrintJobWorker.cs`・`Models\MPrinter.cs`。
+- `Nonaka\CommonModule\Services\IPrintQueueService.cs`・`Data\CommonDbContext.cs`・`Data\Entities\MPrinter.cs`・`TPrintQueue.cs`。
+- `MaterialModule\Services\PrintJobService.cs`・`ApprovalReportPdfProvider.cs`・`DispatchEnqueueService.cs`。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260713）。次回＝上記①〜⑦を確定 → CommonModule（一覧I/F）→ MaterialModule（A/B・2カ所出力）の順で spec 起票。※order-report-sender-info は実装完了・コミット済み（MaterialModule ab73774／Nonaka 564aa61）。
