@@ -254,3 +254,71 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は 20260715。report-print-routing：実装 task1〜12 完了・残 task11（ユーザー）。CommonModule printer-list-query は完了・コミット済み。次セッションはコミット（MaterialModule/Nonaka）＋実機確認から。
+
+---
+
+## 🔴 本日のクローズ（2026/07/15 終了）
+
+### 本日完了・コミット済み
+- **CommonModule `printer-list-query`**：実装完了・ビルドOK。コミット `0baf025`（Nonaka\CommonModule repo）。
+- **MaterialModule `report-print-routing`**：実装 task1〜12 完了（8=既存充足・10=案Y・11=ユーザー）。コミット **MaterialModule `6957c3f`**／**Nonaka `bb54083`**。spec 起票分の初回コミットは既に `0baf025`/`ca5e9f6`。
+- ※`steering/Agnet.md` は無関係のため未コミット（保留のまま）。push は各 repo でユーザー実施。
+
+### 残（ユーザー運用・report-print-routing task11）
+1. DB SQL 適用（db_material_dev）：`create_m_user_print_setting.sql`／`create_m_print_system_setting.sql`。
+2. PrintSettings ページを m_content/r_content_auth に登録（認可）。
+3. `m_print_system_setting` に dispatch_request 行（external_output_enabled=1＋printer_name）投入で外部出力(ii)有効化。
+4. 実機確認（設定保存・テスト印刷・テストメール・承認時未設定ブロック・Dispatches 2カ所出力）。
+
+---
+
+## 🟡 次回の案件（2026/07/15 ユーザー指示・未着手）
+
+**1. Material/Dispatches**
+- 「請求」ボタンの **Enable 条件を「削除」ボタンの仕様に合わせる**（削除ボタンと同じ活性/非活性ロジックに統一。※選択有無等の条件を要確認・現行 Dispatches/Index の削除ボタン挙動を基準）。
+- **「PDF出力」チェックボックス名を「印刷」に変更**（`PdfOutput` の表示ラベル変更。cshtml のラベル文言。プロパティ名は変えなくてよい想定）。
+
+**2. Material/Receivings**
+- **「入庫伝票」ボタン名を「印刷」に変更**（`OnGetExportPdfAsync` を呼ぶボタンのラベル文言変更。Receivings/Index.cshtml）。
+
+**3. Material/Orders/Create**
+- **デフォルトの出力区分をユーザー設定で変更可能にする**。現行デフォルト出力区分は **「3」**（Create.cshtml のモーダル `Order.OutputType` の既定 `<option value="3" selected>`）。
+  - ユーザーごとの既定出力区分を保持する仕組み（例：`m_user_print_setting` 拡張 or 新規ユーザー設定／`IUserPreferenceService` 併用）を検討。
+  - 論点：保持先（既存 m_user_print_setting に「既定出力区分」列を足すか、別のユーザー設定か）／設定UI（PrintSettings 画面に集約するか、Orders/Create 側か）／既定値のフォールバック（未設定は現行の 3）。
+
+### 次回の進め方メモ
+- 1・2 は軽微なUI文言/活性化調整（小 spec or 直接修正）。3 は要件確定（保持先・UI・フォールバック）が必要＝spec 化候補。
+- 参照：`Dispatches/Index.cshtml(.cs)`（請求/削除ボタン・PdfOutput）／`Receivings/Index.cshtml`（入庫伝票ボタン）／`Orders/Create.cshtml`（OutputType 既定）／`PrintSettings/Index`（ユーザー設定集約先候補）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260715）。印刷方式 spec 2件は実装・コミット完了。次回＝上記案件1〜3（特に3はデフォルト出力区分のユーザー設定＝要件確定から）。
+
+---
+
+## 🔵 新セッション ハンドオフ・チェックポイント（2026/07/15・コンテキスト80%）
+
+**次回は新セッションで「再開します、session-memoを確認」から開始。最新メモ＝本ファイル（20260715）。**
+
+### 現在地（確定・コミット済み）
+- 印刷方式 spec 2件 実装完了・コミット済み:
+  - CommonModule `printer-list-query`（`0baf025`）＝プリンタ一覧 read I/F。
+  - MaterialModule `report-print-routing`（MaterialModule `6957c3f`／Nonaka `ca5e9f6`＋`bb54083`）＝PDFプリント/PDFエージェント/SMTPエージェント・ユーザー印刷設定(自己サービス)＋テスト印刷/テストメール・承認時ブロック(案B)・Dispatches外部出力2カ所・印刷設定2マスタ＋SQL。
+- 別件 `order-report-sender-info` は既に完了・コミット済み（MaterialModule `ab73774`／Nonaka `564aa61`）。
+- push は各 repo ユーザー実施。`steering/Agnet.md` 未コミット（保留）。
+
+### 次にやる1アクション（先頭）
+- **案件1（Dispatches）から着手**：(a)「請求」ボタンの活性条件を「削除」ボタン仕様に合わせる、(b)「PDF出力」チェックボックス名→「印刷」。→ 続いて案件2（Receivings「入庫伝票」→「印刷」）、案件3（Orders/Create デフォルト出力区分のユーザー設定化＝要件確定から）。
+
+### 未完了・保留
+- report-print-routing の task11（ユーザー運用：SQL適用・認可登録・m_print_system_setting 行投入・実機確認）。
+- MaterialModule.Tests（PBT）は git 管理外運用。
+
+### 参照ファイル（次回）
+- `MaterialModule/Areas/Material/Pages/Dispatches/Index.cshtml(.cs)`（請求/削除ボタン・PdfOutput ラベル）
+- `MaterialModule/Areas/Material/Pages/Receivings/Index.cshtml`（入庫伝票ボタン）
+- `MaterialModule/Areas/Material/Pages/Orders/Create.cshtml`（OutputType 既定=3）
+- `MaterialModule/Areas/Material/Pages/PrintSettings/Index`（ユーザー設定集約先候補）
+- `MaterialModule/Data/Entities/MUserPrintSetting.cs`（既定出力区分の保持先候補）
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260715）。

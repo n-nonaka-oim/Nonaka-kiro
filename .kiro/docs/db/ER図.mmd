@@ -108,6 +108,12 @@ erDiagram
         string printer_name
     }
 
+    m_user_order_setting {
+        int id PK
+        string user_code
+        int default_output_type
+    }
+
     m_report_notes {
         int id PK
         string report_type

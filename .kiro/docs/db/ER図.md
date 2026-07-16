@@ -39,6 +39,24 @@ erDiagram
 
 > `m_print_output_path` は保存先ベースパスを保持する単独マスタで、他テーブルとリレーションを持たない（独立）。
 
+## ユーザー発注設定マスタ（単独マスタ）
+
+発注エントリ（Orders/Create）モーダルの出力区分の既定値をユーザーごとに保持するマスタ `m_user_order_setting`（`db_material_dev`）。`user_code` を持つが FK 制約は持たず、`t_orders`（`user_id`）とは論理的関連のみの**単独マスタ**。1ユーザー1行（`user_code` を一意）。自己サービス画面（PrintSettings）で本人が設定する。
+
+```mermaid
+erDiagram
+    m_user_order_setting {
+        int id PK
+        nvarchar user_code UK
+        int default_output_type
+        datetime created_at
+        datetime updated_at
+        rowversion row_version
+    }
+```
+
+> `m_user_order_setting` は既定出力区分を保持する単独マスタで、他テーブルと FK リレーションを持たない（`t_orders.user_id` と論理的関連のみ・独立）。
+
 ## トランザクション リレーション
 
 ```mermaid
@@ -218,6 +236,7 @@ erDiagram
 | m_general_personal_info | 自社情報マスタ（旧 m_company_info） | 帳票ヘッダ・送信差出人FB |
 | m_user_print_setting | ユーザー印刷設定 | 帳票別PDFエージェント出力プリンタ |
 | m_print_system_setting | システム印刷設定 | 外部出力フラグ＋プリンタ |
+| m_user_order_setting | ユーザー発注設定 | 発注エントリ既定出力区分（独立・FKなし） |
 | m_report_notes | 帳票備考マスタ | 帳票フッター |
 | m_user_preferences | ユーザー設定 | 画面設定保存 |
 | m_print_output_path | 印刷出力パスマスタ | 印刷出力(PDF)保存先ベースパス保持（独立・リレーションなし） |
