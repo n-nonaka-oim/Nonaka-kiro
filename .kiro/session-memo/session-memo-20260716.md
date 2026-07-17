@@ -221,3 +221,38 @@
 ### 印刷ルーティング運用の残（任意）
 - PrintSettings ページの認可登録（m_content/r_content_auth＝Auth DB）… 必要時に register SQL 作成。
 - 各ユーザーの m_user_print_setting（帳票別プリンタ）・m_user_order_setting（既定出力区分）は本人が画面で設定。
+
+
+---
+
+## 印刷ルーティング 運用適用 完了（2026/07/17）
+
+- PrintSettings ページの認可登録（m_content/r_content_auth＝Auth DB）＝**ユーザー完了済み**。
+- これで report-print-routing の運用タスク（task11 系）は実質クローズ：3テーブル適用済／外部出力(ii)有効化・実機OK／認可登録済。
+- 各ユーザーの帳票別プリンタ（m_user_print_setting）・既定出力区分（m_user_order_setting）は本人が画面で設定する運用。
+
+### 現時点の残（全体）
+1. 将来 C：AWS 移行（RDS for SQL Server・SQL認証・接続文字列環境別切替・Secrets・カットオーバー、dev/staging/prod 3面）＝AWS 環境確定後に別spec。物理DB名（staging/prod）確定で docs/sql/README 対応表を更新。
+2. `steering/Agnet.md` の扱い（コミット要否）＝保留。
+3. コード上の任意整理（案件1 Dispatches の PDF名/ロック文言、サーバ側フォールバック残置、PBT任意テスト）＝任意。
+
+※本追記（session-memo）は未コミット（次回まとめて可）。
+
+
+---
+
+## 残作業 ①② 実施（2026/07/17）
+
+### ① steering `Agnet.md` → `Agent.md` 整理
+- タイプミス名を修正し `Agent.md` に。front-matter `inclusion: manual`（常時インクルード廃止・`#Agent` で参照）＋用途（PrintAgent/SmtpAgent 起動コマンド・前提）を追記。旧 `Agnet.md` 削除。
+
+### ② AWS 移行 設計ドキュメント先行作成
+- `.kiro/docs/aws-migration-design.md`（横断設計・**ドラフト/TODO明示型**）。
+- 内容：目的/スコープ、As-Is（論理ロール×物理DB・接続文字列・SA平文・MainWeb所有の制約）、To-Be（RDS for SQL Server・SQL認証継続・TLS）、接続文字列の環境別化（appsettings.{Env}＋環境変数・アプリコード不変・構成はclnCoCore所有=要承認）、スキーマ適用（USE無しSQLを sqlcmd -d で各環境へ）、Secrets（Secrets Manager/SSM・SA平文廃止）、カットオーバー/ロールバック、TODO一覧（RDS諸元/NW/物理DB名/Secrets/ASPNETCORE_ENVIRONMENT/データ移行/エージェント接続切替/Collation 等）。
+- 位置づけ：前提整備（sql-scripts-db-split）は完了。環境確定後にTODOを埋めて確定版化＋必要ならプラットフォーム所有の spec 起票。
+
+### ③ コード整理（未了・要確認）
+- (a) Dispatches submitEntries の DL名 `出庫伝票_...pdf`・ロック文言「出庫登録中...」が PDF内容（原材料工場入請求）と不一致。内部処理は在庫減算＝出庫だが画面/PDFは「請求」。→ 文言をどうするか**要ユーザー確認**（例：`原材料工場入請求書_...pdf`／「請求処理中...」）。
+- (b) code-behind OnPostSubmitAsync のサーバ側フォールバック（未選択→全件）は UI 早期リターンで到達不能。R2厳密化で削除可（任意）。
+- (c) 任意PBT（OutputTypeHelper/PrintRoutingRules 等）未実装。
+- ①②③ とも未コミット（本追記含む）。
