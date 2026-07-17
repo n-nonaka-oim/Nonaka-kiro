@@ -49,6 +49,7 @@ erDiagram
         int id PK
         nvarchar user_code UK
         int default_output_type
+        bit dispatch_print_default
         datetime created_at
         datetime updated_at
         rowversion row_version
