@@ -195,3 +195,29 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は 20260716。sql-scripts-db-split 実装完了・未コミット・レビュー待ち。
+
+
+---
+
+## sql-scripts-db-split コミット＋push 完了（2026/07/17）
+
+- **MaterialModule** `09b1cd2` → push 済（`5d921a4..09b1cd2`）。docs/sql 24件を rename(material19/common1/auth4)＋USE削除/ヘッダ付与＋README。
+- **Nonaka-kiro** `abf5898` → push 済（`a950503..abf5898`）。spec 一式＋session-memo。
+- `steering/Agnet.md` は保留（未コミット）。
+- 残：将来 C（AWS移行）は環境確定後に別spec。report-print-routing task11（認可登録＝今回 auth/ に整理済みSQLを運用適用・m_print_system_setting 行投入・実機確認）は引き続きユーザー運用。
+
+
+---
+
+## 外部出力(ii) 有効化・実機確認OK（2026/07/17）
+
+- dev DB（db_material_dev）へ印刷ルーティング3テーブルを sqlcmd で適用・存在確認済み：`m_user_print_setting` / `m_print_system_setting` / `m_user_order_setting`（いずれも冪等）。
+- `m_print_system_setting(dispatch_request)` を投入し外部出力(ii)有効化：`external_output_enabled=1` / `printer_name=OJP-33094`（machine=OJIADM23120069）。
+  - 投入SQL新規：`docs/sql/material/insert_m_print_system_setting_dispatch_request.sql`（冪等・USE無し・DBヘッダ付）。
+- 登録済みプリンタ（common DB `m_printer`）確認済み：OJP-22001/22002/33094（machine=OJIADM23120069・実物）ほか。
+- **実機確認OK**：PrintAgent（OJIADM23120069）稼働下で Dispatches 請求 → PDFエージェント経由で PDF出力確認OK。
+- 未コミット：`insert_m_print_system_setting_dispatch_request.sql`（MaterialModule）＋本memo追記（Nonaka-kiro）。
+
+### 印刷ルーティング運用の残（任意）
+- PrintSettings ページの認可登録（m_content/r_content_auth＝Auth DB）… 必要時に register SQL 作成。
+- 各ユーザーの m_user_print_setting（帳票別プリンタ）・m_user_order_setting（既定出力区分）は本人が画面で設定。
