@@ -50,3 +50,33 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は 20260717。改修バッチ ④②完了・②は実機確認前の未コミット。次＝②コミット→③。
+
+
+---
+
+## ③ PrintMonitor 列改修：③-1 実装（2026/07/17）
+
+前提調査：`t_print_queue`（CommonModule）には `printer_name`（nullable）あり／**ユーザー専用列は無い**（reference_code に部分的に混在：dispatch は末尾=user、order_approval は発注番号でユーザー無し）。CommonModule は **SharedCore 参照済み**＝`IUserRepository`/`ApplicationUser` で氏名解決可能（Application 層経由）。空き列の流用は不可（全列用途確定）。
+
+方針（ユーザー確定）：
+- 参照コード→ユーザー(コード＋氏名)置換／PDFマーク列削除／printer_name 列追加。
+- ロス最小化：user_code は新設1列＋`EnqueueAsync` を**任意引数化**（既存呼び出し非破壊）＋必要な投入箇所だけセット。未設定表示は「-」。
+- 分割：③-1（PDF列削除＋printer列追加・CommonModule内）／③-2（user_code 列＋投入セット＋氏名表示・横断）。
+
+### ③-1 完了（CommonModule `PrintMonitor/Index`）
+- `Index.cshtml.cs`：JobRow に `PrinterName` 追加＋射影 `PrinterName = r.PrinterName`。
+- `Index.cshtml`：ヘッダ「PDF」→「出力プリンタ」、セルを `printer_name`（未設定「（既定）」）表示に置換。HasPdfPath セル削除。列数±0。
+- 診断クリア。**未コミット**。spec 未作成（③-1 は軽微直接修正）。
+
+### 次
+- ③-2：`t_print_queue` に `user_code`(NVARCHAR40 null可) 冪等ALTER＋エンティティ＋`IPrintQueueService.EnqueueAsync` 任意引数化＋投入箇所（Dispatches外部出力/PrintJobService承認/PrintSettingsテスト印刷）でセット＋PrintMonitor で参照コード列→user_code＋氏名(IUserRepository)表示。
+- ③-1 の spec 化要否も判断（軽微なら③まとめて spec 記録）。
+
+### 状態（改修バッチ）
+④完了・②完了(コミット/push済)・③-1実装(未コミット)。残 ③-2 → ①(PrintSettings 認可連動)。
+
+### 「Restart」エラー
+IDE表示側(i.map)の不具合。成果物・コミットには影響なし。小規模編集で継続。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260717。次＝③-1 コミット判断→③-2。
