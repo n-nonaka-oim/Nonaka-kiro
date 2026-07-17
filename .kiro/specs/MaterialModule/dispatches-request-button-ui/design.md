@@ -2,7 +2,7 @@
 
 ## Overview
 
-原材料工場入請求画面（`MaterialModule/Areas/Material/Pages/Dispatches/Index.cshtml`）の未登録（pending）ビューにおける操作UIを整備する軽微な変更。対象は **cshtml 内の JavaScript とラベル表示テキストのみ** であり、code-behind（`Index.cshtml.cs`）の変更は原則不要とする。
+原材料工場入請求画面（`MaterialModule/Areas/Material/Pages/Dispatches/Index.cshtml`）の未登録（pending）ビューにおける操作UIを整備する軽微な変更。主対象は **cshtml 内の JavaScript とラベル表示テキスト** である。加えて 2026/07/17 の後続整理で、R2（選択必須）をサーバ側でも担保するため code-behind（`Index.cshtml.cs`）の `OnPostSubmitAsync` から「未選択→全件」フォールバックを削除した（詳細は「Code-behind の扱い（2026/07/17 更新）」を参照）。
 
 変更の骨子は以下3点。
 
@@ -18,14 +18,14 @@ Bootstrap 5 + vanilla JS の既存構成を踏襲し、新規ライブラリ・C
 |---|---|---|
 | `Areas/Material/Pages/Dispatches/Index.cshtml`（マークアップ） | あり | `btnSubmit` に `disabled` 既定付与、ラベルテキスト変更 |
 | `Areas/Material/Pages/Dispatches/Index.cshtml`（`@section Scripts` 内 JS） | あり | `updateActionButtons()` に btnSubmit 制御追加、`submitEntries()` のフォールバック除去＋早期リターン |
-| `Areas/Material/Pages/Dispatches/Index.cshtml.cs`（code-behind） | **なし** | 後述「Code-behind を変更しない根拠」を参照 |
+| `Areas/Material/Pages/Dispatches/Index.cshtml.cs`（code-behind） | あり（2026/07/17 更新） | `OnPostSubmitAsync` の「未選択→全件」フォールバック削除、選択0件は `ErrorMessage`＋`ReloadAsync` で早期リターン。詳細は後述「Code-behind の扱い（2026/07/17 更新）」を参照。PDF/在庫減算/外部出力/選択時ロジックは不変 |
 | pre-delivery ビュー / `clnCoCore`（MainWeb・AuthModule・SharedCore） | **なし** | 不変更 |
 
 すべての変更は `StatusView == "pending"` 時に描画される要素・スクリプトに閉じている。pre-delivery ビューは `btnSubmit` / `chkPdfOutput` / `submitEntries()` を描画・使用しないため影響を受けない。
 
 ## Architecture
 
-本変更はクライアント側（ブラウザ）に閉じた表示・入力制御の調整であり、サーバ側の処理フロー・DB・PDF生成には一切触れない。
+本変更の中心はクライアント側（ブラウザ）に閉じた表示・入力制御の調整である。サーバ側は R2 を担保する範囲のみに限定して変更する（`OnPostSubmitAsync` の未選択→全件フォールバック削除＝選択0件の早期リターン化）。DB・PDF生成・在庫減算・外部出力・選択時の登録ロジックには触れない。
 
 ```
 [pending ビュー DOM]
@@ -44,7 +44,9 @@ Bootstrap 5 + vanilla JS の既存構成を踏襲し、新規ライブラリ・C
         └─ fetch(?handler=Submit)  formData: SelectedEntryIds[], PdfOutput
                 │
                 ▼
-        [Index.cshtml.cs OnPostSubmitAsync]（不変更）
+        [Index.cshtml.cs OnPostSubmitAsync]
+             ├─ 選択0件 → ErrorMessage + ReloadAsync（早期リターン）★フォールバック削除
+             └─ 選択1件以上 → PDF/在庫減算/外部出力（不変）
 ```
 
 ## Components and Interfaces
@@ -146,16 +148,23 @@ function submitEntries() {
 }
 ```
 
-備考: 請求ボタン自体が選択0件時 disabled になる（コンポーネント1・3）ため、選択0件で `submitEntries()` が呼ばれる経路は通常発生しない。早期リターンは二重防御として機能する。
+備考: 請求ボタン自体が選択0件時 disabled になる（コンポーネント1・3）ため、選択0件で `submitEntries()` が呼ばれる経路は通常発生しない。R2（選択必須）は **クライアント（`submitEntries()` 早期リターン）とサーバ（`OnPostSubmitAsync` 選択必須化）の二重で担保** する。クライアント早期リターンが第一防御、サーバ側の選択0件早期リターン（`ErrorMessage`＋`ReloadAsync`）が最終防御として機能する（詳細は「Code-behind の扱い（2026/07/17 更新）」参照）。
 
-## Code-behind を変更しない根拠
+## Code-behind の扱い（2026/07/17 更新）
 
-`Index.cshtml.cs` の `OnPostSubmitAsync` には、`SelectedEntryIds.Count == 0` のとき全件を対象とするサーバ側フォールバックが存在する。ただし本仕様の要件（R2）は **`Submit_Entries`（JavaScript 関数）** に対する制約であり、クライアント側で早期リターンを行う結果、UI から `SelectedEntryIds` が空で送信される経路は消滅する。したがってサーバ側フォールバックは UI 到達不能な経路となり、請求時に全件が対象となることはない。
+### 当初方針（参考・履歴）
 
-- code-behind の分岐（`PdfOutput` による PDF 返却／リダイレクト）は R3.5 に従い不変とする。
-- サーバ側フォールバック自体の削除は本仕様の必須変更ではない（プロジェクトルール「MaterialModule 配下のみ・最小単位」に従い、client 変更のみで要件を充足する）。将来的な整理を行う場合は別タスクとして扱う。
+当初 design では code-behind（`Index.cshtml.cs`）を **不変更** とする方針だった。根拠は次のとおり: `OnPostSubmitAsync` には `SelectedEntryIds.Count == 0` のとき全件を対象とするサーバ側フォールバックが存在するが、クライアント側で早期リターンを行う結果、UI から `SelectedEntryIds` が空で送信される経路が消滅するため、サーバ側フォールバックは UI 到達不能な経路であり実害がない、というものだった。
 
-この方針により、`clnCoCore`（MainWeb / AuthModule / SharedCore）はもとより、MaterialModule 側 code-behind にも変更を加えない（R4.3）。
+### 現行方針（2026/07/17 後続整理で変更）
+
+2026/07/17 の後続整理で、R2（選択必須）を **クライアント側だけでなくサーバ側でも厳密に担保する** 方針に変更した。これにより `OnPostSubmitAsync` の「未選択（`SelectedEntryIds.Count == 0`）→全件対象」フォールバックを **削除** し、選択0件のときは `ErrorMessage` を設定したうえで `ReloadAsync`（一覧再読込）して **早期リターン** する実装に変更した。
+
+- **変更箇所**: `OnPostSubmitAsync` の「未選択→全件」フォールバックを削除し、選択0件は `ErrorMessage` ＋ `ReloadAsync` で早期リターン。
+- **不変箇所**: `PdfOutput` による分岐（PDF 出力(i)／リダイレクト）、在庫減算、外部出力(ii)、選択時（`SelectedEntryIds.Count >= 1`）の登録ロジックはいずれも従来どおり不変（R3.5）。
+- **理由**: UI 早期リターンに依存せず、サーバ側単体でも「選択0件で全件処理されない」ことを保証し、R2 を UI・サーバの二重で担保する（防御の多層化）。
+
+この変更は **MaterialModule 配下（`Index.cshtml.cs`）に閉じており**、`clnCoCore`（MainWeb / AuthModule / SharedCore）には一切変更を加えない（R4.3）。
 
 ## Data Models
 
@@ -163,7 +172,7 @@ function submitEntries() {
 
 ## Error Handling
 
-- 選択0件での請求: `submitEntries()` の早期リターンにより送信されない。加えて `btnSubmit` が disabled のため click 自体が発生しない（多重防御）。
+- 選択0件での請求: `submitEntries()` の早期リターンにより送信されない。加えて `btnSubmit` が disabled のため click 自体が発生しない（多重防御）。万一サーバに空の `SelectedEntryIds` が到達しても、`OnPostSubmitAsync` が `ErrorMessage`＋`ReloadAsync` で早期リターンし全件処理は行わない（サーバ側担保）。
 - confirm キャンセル: 現状どおり送信を中断（`return`）。
 - fetch 失敗: 現状どおり `catch` で `MaterialLock.unlock()` 後に `location.reload()`。
 - 既存のトークン取得・PDF ダウンロード分岐は不変のため、エラー挙動に回帰は生じない。

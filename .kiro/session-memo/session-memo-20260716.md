@@ -273,3 +273,26 @@
 ### 状態
 - (a)(b) は MaterialModule ソース変更＝コミット対象。(c) はテスト（管理外・未コミット運用）。
 - ①②（Agent.md/AWS doc）は 92f7fbc で push 済。③(a)(b) と本追記が未コミット。
+
+
+---
+
+## spec 整合更新（残(b)反映）＋本日クローズ（2026/07/17）
+
+- `dispatches-request-button-ui/design.md` を更新：「Code-behind を変更しない根拠」→「Code-behind の扱い（2026/07/17 更新）」に改訂。当初不変更方針を履歴として残しつつ、後続整理で `OnPostSubmitAsync` の未選択→全件フォールバックを削除し R2 をサーバ側でも担保（選択0件は ErrorMessage＋ReloadAsync 早期リターン）した旨を明記。Overview/Scope表/Architecture図/Error Handling も整合。requirements/tasks は不変。
+- ※design 中の JS スニペットのロック文言は例示のため `出庫登録中...` 表記のまま（実装は (a) で `請求処理中...` に変更済み・機能差なし）。
+
+## 🔴 本日のクローズ（2026/07/17 終了）
+
+### 完了・push 済み
+- push 整備：MaterialModule（`n-nonaka-oim/MaterialModule`）／Nonaka-kiro（新規 `n-nonaka-oim/Nonaka-kiro`）両同期。
+- 印刷ルーティング運用適用：dev DB に3テーブル適用・外部出力(ii)有効化(dispatch_request/OJP-33094)・実機OK・認可登録済(ユーザー)。
+- ① steering Agent.md 整理／② AWS移行設計doc(.kiro/docs/aws-migration-design.md・TODO型)／③ (a)Dispatches文言統一・(b)サーバ側選択必須化・(c)任意PBT。
+- コミット：MaterialModule `9c795fc`（他 09b1cd2/e5675e1 等）／Nonaka-kiro `fba1c07`＋design更新分。
+
+### 残（将来）
+- AWS移行(C) 実装：環境確定後に aws-migration-design.md の TODO を埋めて着手。staging/prod 物理DB名確定で docs/sql/README 更新。
+- MaterialModule.Tests は git 管理外運用（PBT はローカル）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260716。本日分すべて push 済み（design更新分の最終コミットは本区切りで実施）。
