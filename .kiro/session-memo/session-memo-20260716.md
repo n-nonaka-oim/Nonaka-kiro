@@ -133,3 +133,25 @@
 - **3案件とも実装・確認完了・未コミット**。次＝コミット（ユーザー承認後）。
   - 対象：MaterialModule ソース（Dispatches/Receivings/Orders/Create・PrintSettings・Services・Data・docs/sql）＋ Nonaka/.kiro（spec 3件＋session-memo 20260716＋docs/db）。
   - コミットは MaterialModule repo と Nonaka(.kiro) repo の2つ。push はユーザー。
+
+---
+
+## コミット完了（2026/07/16）
+
+- **MaterialModule repo `5d921a4`**：3案件のソース＋`create_m_user_order_setting.sql`（13ファイル）。
+- **Nonaka/.kiro repo `d7d609b`**：spec 3件＋DB文書（テーブル定義書.md/ER図.md/ER図.mmd）＋session-memo（20260716 追加・20260715 末尾反映）（17ファイル）。
+- `steering/Agnet.md` は保留（未コミットのまま）。
+- **push は各 repo でユーザー実施**。
+- report-print-routing task11（前回分の運用：認可登録・m_print_system_setting 行投入等）は引き続き残（20260715 参照）。
+
+---
+
+## 🔴 本日のクローズ（2026/07/16 終了）
+
+- MaterialModule UI 3案件（dispatches-request-button-ui / receivings-print-button-label / orders-default-output-type）＝spec化・実装・ビルド/動作確認・コミット完了。
+- コミット：MaterialModule `5d921a4` ／ Nonaka/.kiro `d7d609b`。`steering/Agnet.md` は保留（未コミット）。
+- **残（ユーザー）**：各 repo の push ／（必要時）本番DBへ create_m_user_order_setting.sql 適用 ／ report-print-routing task11（前回運用：認可登録・m_print_system_setting 行投入・実機確認, 20260715 参照）。
+- 次セッションの新規案件は未定。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は本ファイル（20260716）。3案件コミット済み。次＝push・残運用、または新規案件の指示待ち。
