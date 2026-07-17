@@ -256,3 +256,20 @@
 - (b) code-behind OnPostSubmitAsync のサーバ側フォールバック（未選択→全件）は UI 早期リターンで到達不能。R2厳密化で削除可（任意）。
 - (c) 任意PBT（OutputTypeHelper/PrintRoutingRules 等）未実装。
 - ①②③ とも未コミット（本追記含む）。
+
+
+---
+
+## 残作業 ③ コード整理 完了（2026/07/17）
+
+- **(a) Dispatches 文言統一**：`Dispatches/Index.cshtml` の `submitEntries()` で DL名 `出庫伝票_...pdf`→`原材料工場入請求書_...pdf`、ロック文言「出庫登録中...」→「請求処理中...」。
+  - 方針（ユーザー確定）：現場目線は「倉庫→現場入れ＝請求」。「出庫」の語は将来 `/Delivery` 用に温存。
+- **(b) サーバ側フォールバック廃止**：`Index.cshtml.cs` `OnPostSubmitAsync` の「未選択→全件」を削除し、選択0件は `ErrorMessage`＋`ReloadAsync`で早期リターン（R2 をサーバ側でも厳密化）。選択時ロジック・在庫減算・PDF/外部出力は不変。診断クリア。
+- **(c) 任意PBT実装**：`MaterialModule.Tests/OrdersDefaultOutputType/` に追加（※MaterialModule.Tests は git 管理外運用＝ローカル）。
+  - `OutputTypeHelperPropertyTests.cs`（Property1：Normalize 値域/忠実性/フォールバック・IsValid）。
+  - `UserOrderSettingServicePropertyTests.cs`（Property2：往復・単一行性／Property3：不正値拒否・状態不変、InMemory=TestDbContextFactory）。
+  - 既存 FsCheck 作法（Prop.ForAll・Arbitrary最大3・タグ）準拠。診断クリア。テスト実行はユーザー。
+
+### 状態
+- (a)(b) は MaterialModule ソース変更＝コミット対象。(c) はテスト（管理外・未コミット運用）。
+- ①②（Agent.md/AWS doc）は 92f7fbc で push 済。③(a)(b) と本追記が未コミット。
