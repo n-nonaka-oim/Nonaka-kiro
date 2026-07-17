@@ -155,3 +155,43 @@
 
 ### 再開合図
 「再開します、session-memoを確認」。最新は本ファイル（20260716）。3案件コミット済み。次＝push・残運用、または新規案件の指示待ち。
+
+
+---
+
+## push 完了（2026/07/17 追記）
+
+- **MaterialModule**：`git push` 完了。`origin/main` と同期（`868f5e5..5d921a4`）。remote=`n-nonaka-oim/MaterialModule`。
+- **Nonaka(.kiro)**：新規リモート `n-nonaka-oim/Nonaka-kiro` を作成・設定。README のみの初期状態だったため `--allow-unrelated-histories` でマージ取り込み後 push（`45d487a..a950503`）。upstream 追跡設定済み。push 前に session-memo クローズ追記を `1531f2f` でコミット済み。
+- `steering/Agnet.md` は引き続き保留（未追跡）。
+- 以後、Nonaka(.kiro) は `git push`（origin/main）で更新可能。
+
+
+---
+
+## 案件（7/17）：SQL の環境非依存化＝`sql-scripts-db-split` 実装完了
+
+前段：本番DBは未存在・AWS（RDS for SQL Server・SQL認証）想定。環境移行に備え SQL を環境非依存化。スコープA（SQLの環境非依存化＋適用手順整備）を実施。AWS移行全体はC（将来・別spec）。
+
+### spec（単一正本）
+- `.kiro/specs/MaterialModule/sql-scripts-db-split/`（.config.kiro / requirements.md / design.md / tasks.md）。fast-task。
+- 方式＝**USE削除**＋**対象DB（論理ロール）別サブフォルダ分割**＋**DBヘッダコメント**＋**README対応表**。
+
+### 実装（MaterialModule/docs/sql・全24本・診断/検証OK）
+- 分割：`material/`(19) ／ `common/`(1=insert_m_calendar) ／ `auth/`(4=register/unregister content)。直下SQLは0、先頭USE残存0を確認。
+- 各SQL：先頭 `USE <db>;`＋直後GO を削除（無い物はスキップ）、先頭に論理ロール＋dev/staging/prod 物理DB名の DBヘッダコメント付与。DDL/DML本体は不変。
+- `docs/sql/README.md` 新規：ロール→物理DB名 対応表（material=db_material_{env}／common=db_common_{env}／auth=dev:dbAuthTest・staging/prod未定）、SSMS/sqlcmd 実行手順、実行順・冪等性、auth は clnCoCore Auth DB へのデータ登録（ソース非改変）、スコープ注記（AWS移行全体はC/別spec）。
+- 手段：smart_relocate＋str_replace/fs_write のみ。clnCoCore 非改変。
+
+### 留意
+- staging/prod の物理DB名は命名規約からの想定値（AWS/環境確定後に README 見直し）。
+- 過去 session-memo の旧SQLパス記載は履歴として非改変（追わない）。
+- ファイル移動により MaterialModule リポジトリでは rename 差分として現れる想定。
+
+### 状態・次
+- 実装完了・**未コミット**（MaterialModule＝docs/sql 移動+編集+README、Nonaka/.kiro＝spec 3ファイル＋本memo）。
+- 次：ユーザー差分レビュー（tasks task5）→ 問題なければコミット＋push（MaterialModule／Nonaka-kiro）。
+- 将来 C（AWS移行：RDS・接続文字列切替・Secrets・カットオーバー）は AWS 環境確定後に別spec化。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260716。sql-scripts-db-split 実装完了・未コミット・レビュー待ち。
