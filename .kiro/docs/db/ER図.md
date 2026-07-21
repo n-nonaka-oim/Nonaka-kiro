@@ -86,6 +86,12 @@ DB: `db_common_dev` / Server: `OJIADM23120073\DEVELOPMENT`
 ```mermaid
 erDiagram
     m_smtp_config ||--o{ t_smtp_queue : "config_key"
+    t_smtp_queue {
+        int id PK
+        nvarchar module
+        nvarchar config_key
+        nvarchar user_code
+    }
     m_smtp_agent_control {
         int id PK
     }

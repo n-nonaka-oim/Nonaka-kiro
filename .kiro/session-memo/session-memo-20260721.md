@@ -79,3 +79,37 @@ PrintSettings 画面（`MaterialModule/Areas/Material/Pages/PrintSettings/Index`
 
 ### メモ（i.map頻発への対策）
 全文再読込をやめ行範囲限定・サブエージェントは差分要約のみ・Checkpointは git stat のみ、で出力量を削減（レンダラ負荷軽減）。長引く場合はセッション区切り／Kiro更新を推奨。
+
+
+---
+
+## SmtpMonitor ユーザー列対応（新規 spec `smtp-monitor-user-column`）（2026/07/21・追記）
+
+PrintMonitor は③-2で実装済み・新規投入分から表示される旨をユーザーに説明。SmtpMonitor はユーザー列が未実装だったため新規機能として実装。
+
+### spec（CommonModule・fast-task）
+`.kiro/specs/CommonModule/smtp-monitor-user-column/`（requirements/design/tasks）。PrintMonitor ③-2 同型・非破壊。
+
+### 実装（診断クリア・全タスク完了）
+- CommonModule：
+  - `TSmtpQueue.UserCode`（`user_code` nvarchar40 null）＋冪等ALTER `docs/sql/alter_t_smtp_queue_add_user_code.sql`（COL_LENGTHガード）。
+  - `ISmtpQueueService.EnqueueAsync` 末尾に任意 `string? userCode=null`＋実装で空白null正規化して保存（非破壊）。
+  - SmtpMonitor：code-behind に `IUserRepository` 注入・JobRow に UserCode/UserName・GetAllUsersAsync で UserName→FullName 辞書(OrdinalIgnoreCase)解決。cshtml「ユーザー」列（接続プロファイル直後）追加＝`UserCode（UserName）`/「-」、空行 colspan 14→15。検索は宛先・件名維持。
+- MaterialModule 投入元（SMTP 2経路）：
+  - PrintSettings `OnPostTestMailAsync`＝`userCode: User.Identity?.Name`。
+  - `DispatchEnqueueService.EnqueueOrderApprovalFaxAsync`（FAX/メール経路 module=material/config_key=fax）＝`userCode: head.UserId`（PrintJobService 前例に倣う。HttpContext 無しのため）。
+- docs：テーブル定義書.md／ER図.md に user_code 追記。
+- 任意テスト（2.2 EnqueueAsync／4.2 FormatUserDisplay PBT）はスキップ。
+
+### Checkpoint（済）
+- CommonModule：5変更＋新規SQL（SmtpMonitor cshtml/cs・TSmtpQueue・ISmtpQueueService・SmtpQueueService・ALTER SQL）。
+- MaterialModule：2ファイル（PrintSettings Index.cshtml.cs・DispatchEnqueueService.cs）。
+- clnCoCore：差分なし。
+
+### 状態
+- **ビルドOK・確認OK**。**DB ALTER 適用要否**：ユーザーが db_common_dev に `alter_t_smtp_queue_add_user_code.sql` を実行（未確認なら要適用）。
+- 既存行は user_code=NULL＝「-」、DB適用＋デプロイ後の新規投入分から「コード（氏名）」表示。
+- 次＝コミット＋push（CommonModule／MaterialModule／Nonaka-kiro の3リポジトリ）。
+
+### 再開合図
+「再開します、session-memoを確認」。最新は 20260721。①（帳票別＋カード）push済。SmtpMonitorユーザー列＝実装完了・確認OK・コミット直前（3リポジトリ）。PrintMonitor は既存機能で新規投入分から表示。
