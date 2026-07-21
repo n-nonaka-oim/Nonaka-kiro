@@ -6,7 +6,9 @@ PrintSettings 画面（`Areas/Material/Pages/PrintSettings/Index`）の「帳票
 
 判定方式は clnCoCore の `DbPermissionHandler` と同一（SuperUser 特別扱い＋Claim `max_rank`/`all_section_ids`＋`IContentAuthService.IsAuthorizedForAnySectionAsync`）を踏襲する。UI は案B（行は表示し、Inaccessible は select と「テスト印刷」ボタンを `disabled`）。あわせて `OnPostAsync`・`OnPostTestPrintAsync` にサーバ側防御を追加する。
 
-変更は `IndexModel`（.cshtml.cs）と `Index.cshtml` の 2 ファイルに閉じる。clnCoCore は読み取り参照のみ・DB スキーマ不変・ページ別既定設定カードは不変。
+加えて、同画面の「ページ別 既定設定」カード（発注エントリの出力区分・原材料工場入請求の印刷既定）についても、対応するページへのアクセス権に連動して入力コントロールの有効・無効を切り替え（§8）、保存処理 `OnPostSaveOrderSettingAsync` に項目単位のサーバ側防御（§9）を追加する。判定は帳票別と同じ `BuildReportEditMapAsync`（`report_type → CanEdit`）をそのまま流用し、新規のページ判定ロジックは追加しない（`order_approval`＝`Orders/Create`、`dispatch_request`＝`Dispatches/Index` の可否をカードにも適用）。
+
+変更は `IndexModel`（.cshtml.cs）と `Index.cshtml` の 2 ファイルに閉じる。clnCoCore は読み取り参照のみ・DB スキーマ不変。ページ別既定設定カードは、上記アクセス権連動（無効化・保存時防御）以外の既存挙動（保存値・初期表示ロジック・1 行同時保存）は変更しない。
 
 ## Architecture
 
@@ -220,9 +222,114 @@ public async Task<IActionResult> OnPostTestPrintAsync(string reportType, Cancell
 }
 ```
 
+### 8. ページ別既定設定カードの無効化（案B）
+
+「ページ別 既定設定」カード（`Index.cshtml` 内の別 form：`asp-page-handler="SaveOrderSetting"`, `id="pageDefaultForm"`）は次の 2 入力を持つ。
+
+- 発注エントリ（出力区分）: `<select asp-for="DefaultOutputType">`（値 0〜3）→ 対応ページ `Orders/Create`（Report_Type `order_approval` と同判定）。
+- 原材料工場入請求（印刷）: `<input asp-for="DispatchPrintDefault" type="checkbox" id="chkDispatchPrintDefault">` → 対応ページ `Dispatches/Index`（Report_Type `dispatch_request` と同判定）。
+
+帳票別で構築済みの `editMap`（`report_type → CanEdit`）には既に `order_approval` と `dispatch_request` の可否が含まれるため、新規のページ判定は追加せずこれを流用する。`IndexModel` に画面表示用の 2 フラグ（画面内 DTO・永続化なし）を追加する。
+
+```csharp
+/// <summary>発注エントリ出力区分（Order_Output_Type_Item）の入力を操作可能か。Orders/Create の可否に連動。</summary>
+public bool CanEditDefaultOutputType { get; set; }
+
+/// <summary>原材料工場入請求 印刷既定（Dispatch_Print_Item）の入力を操作可能か。Dispatches/Index の可否に連動。</summary>
+public bool CanEditDispatchPrintDefault { get; set; }
+```
+
+`editMap` を構築する各ハンドラ（`OnGetAsync` / `OnPostAsync` の再表示 / `ReloadAsync`）で、帳票別 `Inputs` を組み立てるのと同じ箇所で 2 フラグを設定する。`report_type` リテラルは既存 `ReportTypes` と同値。
+
+```csharp
+CanEditDefaultOutputType   = editMap.TryGetValue("order_approval",   out bool co) && co;
+CanEditDispatchPrintDefault = editMap.TryGetValue("dispatch_request", out bool cd) && cd;
+```
+
+cshtml は、出力区分 select と印刷チェックボックスに `disabled` を付与する。カード自体・保存ボタン・ラベルは常時表示する（案B・帳票別と同思想）。
+
+```razor
+<select asp-for="DefaultOutputType" class="form-select form-select-sm" style="width:auto;"
+        disabled="@(!Model.CanEditDefaultOutputType)">
+    ...
+</select>
+```
+
+```razor
+<input asp-for="DispatchPrintDefault" class="form-check-input" type="checkbox" id="chkDispatchPrintDefault"
+       disabled="@(!Model.CanEditDispatchPrintDefault)" />
+```
+
+SuperUser は `editMap` が全帳票 true になるため、両フラグとも true（=操作可能）となり要件 6.5 を満たす。
+
+### 9. OnPostSaveOrderSettingAsync のサーバ側防御（項目単位）
+
+`OnPostSaveOrderSettingAsync` は出力区分と印刷既定を 1 行に同時保存する（`SaveOrderSettingAsync(userCode, outputType, dispatchPrint)`）。案B の無効化を回避した改ざん送信では、`disabled` な select は送信されず `DefaultOutputType` が既定(0) に、`asp-for` の hidden により `DispatchPrintDefault` が false で送信されうるため、送信値をそのまま保存すると担当外項目を上書きしてしまう。よって**項目単位**で防御する。
+
+ハンドラ先頭で `editMap` を 1 回構築し、各項目のアクセス可否を解決する。アクセス可の項目のみ送信値を採用し、不可の項目は保存済みの既存値（`GetDefaultOutputTypeAsync` / `GetDispatchPrintDefaultAsync`）を維持する。
+
+```csharp
+public async Task<IActionResult> OnPostSaveOrderSettingAsync()
+{
+    string userCode = User.Identity?.Name ?? "unknown";
+
+    // 項目単位の防御に用いるアクセス可否マップを1回構築（帳票別と同一：新規ページ判定は追加しない）。
+    Dictionary<string, bool> editMap = await BuildReportEditMapAsync();
+    bool canOutput   = editMap.TryGetValue("order_approval",   out bool co) && co;
+    bool canDispatch = editMap.TryGetValue("dispatch_request", out bool cd) && cd;
+
+    // 出力区分: アクセス可なら送信値を採用し値域検証。不可なら既存値を維持（改ざん送信対策）。
+    int outputToSave;
+    if (canOutput)
+    {
+        if (!OutputTypeHelper.IsValid(DefaultOutputType))
+        {
+            Message = "出力区分の値が不正です。0〜3 のいずれかを選択してください。";
+            await ReloadAsync(userCode);
+            return Page();
+        }
+        outputToSave = DefaultOutputType;
+    }
+    else
+    {
+        outputToSave = OutputTypeHelper.Normalize(
+            await orderSettingService.GetDefaultOutputTypeAsync(userCode));
+    }
+
+    // 印刷既定: アクセス可なら送信値、不可なら既存値を維持。
+    bool dispatchToSave = canDispatch
+        ? DispatchPrintDefault
+        : PrintDefaultHelper.Normalize(await orderSettingService.GetDispatchPrintDefaultAsync(userCode));
+
+    try
+    {
+        await orderSettingService.SaveOrderSettingAsync(userCode, outputToSave, dispatchToSave);
+        Message = "既定設定を保存しました。";
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        Message = "他のユーザーが先に更新しました。画面を再読み込みしてください。";
+    }
+
+    await ReloadAsync(userCode);
+    return Page();
+}
+```
+
+ポイント:
+- 両項目とも不可の場合でも既存値をそのまま再保存するため実質 no-op となり、担当外項目は変更されない。
+- 値域検証（`IsValid`）は「出力区分がアクセス可で送信値を採用するとき」にのみ適用する（要件 7.4）。不可時は既存値を `Normalize` するため不正値混入の余地はない。
+- 保存ボタンは常時表示（帳票別の保存ボタンと同思想で無効化しない）。
+- 競合（`DbUpdateConcurrencyException`）処理・再表示（`ReloadAsync`）は従来どおり。
+
 ## Data Models
 
-DB スキーマ変更なし。`MUserPrintSetting` の保存・削除ロジックは既存のまま（Inaccessible をスキップする分岐のみ追加）。UI 表示用に `AssignmentInput.CanEdit`（画面内 DTO・永続化なし）を追加する。
+DB スキーマ変更なし。`MUserPrintSetting` の保存・削除ロジックは既存のまま（Inaccessible をスキップする分岐のみ追加）。ページ別既定設定（出力区分・印刷既定）の保存先・スキーマも既存のまま（`SaveOrderSettingAsync` で 1 行同時保存）で変更しない。
+
+UI 表示用の非永続フィールドを `IndexModel` に追加する（いずれも画面内表示専用・DB へ保存しない）:
+- `AssignmentInput.CanEdit`: 帳票別行の編集可否。
+- `CanEditDefaultOutputType`: ページ別既定設定カードの出力区分 select の操作可否（`Orders/Create` の可否に連動）。
+- `CanEditDispatchPrintDefault`: ページ別既定設定カードの印刷チェックボックスの操作可否（`Dispatches/Index` の可否に連動）。
 
 Report_Page_Map（area 固定 = `Material`）:
 
@@ -241,17 +348,32 @@ Report_Page_Map（area 固定 = `Material`）:
 
 ## Testing Strategy
 
-アクセス判定は `IContentAuthService`（DB/Claim 依存の IO）への薄い委譲、保存・テスト印刷防御は `DbContext`・印刷キューへの副作用検証であり、いずれも「for all inputs で成り立つ純粋な性質」を意味あるかたちで記述できない。したがって本機能に property-based test 対象は無し（設計判断）。検証は以下の代表例・統合テストで行う（実施はタスクフェーズで判断）。
+アクセス判定マップ構築・保存/テスト印刷防御は `IContentAuthService`（DB/Claim 依存の IO）・`DbContext`・印刷キューへの副作用に依存し、意味ある普遍的性質を記述できないため代表例・統合テストで検証する。唯一の純粋関数 `ParseSectionIds`（Claim 解析）のみ property-based test 対象とする。
 
-- `IContentAuthService` をモックし、可/不可の代表例で `CanEdit` が正しく解決されること（要件 1.1〜1.5）。
+Property test（純粋関数）:
+- `ParseSectionIds`: 任意のトークン列に対してカンマ結合→解析で空要素が除去され非空トークンが順序保持されること（Property 1・要件 1.3）。FsCheck.Xunit を使用、最低 100 反復。
+
+Example / Integration test（実施はタスクフェーズで判断）:
+- `IContentAuthService` をモックし、可/不可の代表例で `CanEdit`（判定マップ）が正しく解決されること（要件 1.1〜1.2）。
 - SuperUser ロール時に全帳票 Accessible となること（要件 1.4）。
 - `order_approval` で `Orders/Create/Index` のみ可のモックでも Accessible になること（要件 1.5）。
 - `OnPostAsync`: Inaccessible の割当が保存されず、Accessible は保存されること（要件 3.1〜3.3）。
 - `OnPostTestPrintAsync`: Inaccessible 時に印刷キュー投入（`EnqueueAsync`）が呼ばれず拒否メッセージが出ること、Accessible 時は従来動作（要件 4.1〜4.3）。
 - cshtml: `CanEdit=false` 行で select と「テスト印刷」に `disabled` が付与され、行は表示されること（要件 2.1〜2.4）。
 
+ページ別既定設定カード（§8・§9）も同様に IO/副作用依存（`IContentAuthService`・`IUserOrderSettingService`）のため、property ではなく代表例・統合テストで検証する（実施はタスクフェーズで判断）:
+- `CanEditDefaultOutputType` / `CanEditDispatchPrintDefault` が `editMap` の `order_approval` / `dispatch_request` の可否に一致すること（要件 6.1〜6.4）。SuperUser 時は両方 true（要件 6.5）。
+- cshtml: フラグ false のとき出力区分 select・印刷チェックボックスに `disabled` が付与され、カード・保存ボタン・ラベルは表示されること（要件 6.2〜6.4）。
+- `OnPostSaveOrderSettingAsync`: 出力区分がアクセス不可のとき送信値が採用されず既存値が維持されること、アクセス可のとき送信値が保存され値域検証が適用されること（要件 7.1〜7.4）。印刷既定についても不可時は既存値維持・可時は送信値採用（要件 7.1〜7.3）。両項目不可時は既存値の再保存で実質 no-op となること。
+
 ## Correctness Properties
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system-essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
-本機能の全アクセス判定・防御ロジックは外部認可サービス（`IContentAuthService`）と DB/印刷キューへの副作用に依存する IO 的処理であり、純粋関数として普遍的性質（For all …）を意味あるかたちで記述できるものが無い。したがって property-based test 対象のプロパティは定義しない（設計判断）。上記 Testing Strategy の代表例・統合テストで要件を検証する。
+本機能の大半（アクセス判定マップ構築・保存/テスト印刷防御・ページ別既定設定カードの無効化と保存時防御）は外部認可サービス（`IContentAuthService`）・`IUserOrderSettingService` と DB/印刷キュー/UI への副作用に依存する IO 的処理であり、普遍的性質を意味あるかたちで記述できない（Testing Strategy の代表例・統合テストで検証）。§8・§9 の追加でも新規の純粋関数は増えないため property は追加しない。テスト可能な純粋関数は Claim 解析 `ParseSectionIds` のみで、以下 1 件を property 化する。
+
+### Property 1: 所属ID解析は空要素を除去し非空トークンを保持する
+
+*For any* 非空トークン（カンマを含まない）の列について、それらをカンマで結合した文字列を `ParseSectionIds` で解析すると、結果は元の非空トークン列と順序を含めて一致する。また、空要素（連続カンマ・先頭/末尾カンマ・空文字列）は結果から除去される。
+
+**Validates: Requirements 1.3**
