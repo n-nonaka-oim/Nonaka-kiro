@@ -71,8 +71,10 @@ erDiagram
     t_consumption_forecasts ||--o| m_forecast_sources : "source_id"
     t_tank_checks ||--o| m_tanks : "tank_id"
     t_orders ||--o{ t_order_dispatch_log : "reference_code (論理参照: OrderNoグループ)"
+    m_items ||--o{ t_material_plans : "item_id (論理参照)"
 ```
 
+> `t_material_plans` は予実管理 Phase1 の原材料月次計画（品目別・月次）。`item_id` は `m_items.id` への論理参照（物理FK制約なし・結果テーブル方針）。四半期/半期/年度は保存せず月次の合計として都度算出。一意制約 `uq_t_material_plans_01`（fiscal_year, year_month, item_id, plan_version）。
 > `t_order_dispatch_log` は発注承認契機のFAX送信投入履歴（二重送信防止）。`reference_code` は `t_orders.order_no` の発注番号グループ（先頭3セグメント）への論理参照（FK制約なし）。`queue_job_id` は共通DB `db_common_dev` の `t_smtp_queue.id` への論理参照（別DBのためFK制約なし・参照のみ）。配置DBは `db_material_dev`（資材固有）。
 
 ---
@@ -215,6 +217,7 @@ erDiagram
 | m_purchase_conditions | m_suppliers | supplier_code | コード参照 |
 | t_order_dispatch_log | t_orders | reference_code | 発注番号グループ（OrderNo先頭3セグメント）への論理参照 |
 | t_order_dispatch_log | t_smtp_queue | queue_job_id | 共通DB db_common_dev の送信キュージョブID。別DBのためFK制約なし・参照のみ |
+| t_material_plans | m_items | item_id | 予実管理Phase1の月次計画。品目への論理参照（物理FKなし・結果テーブル方針） |
 
 ---
 
@@ -250,7 +253,7 @@ erDiagram
 
 > 注: 旧 db_material_dev の `m_print_agent_control`／`m_smtp_config`／`m_smtp_agent_control`（共通基盤移行に伴う孤立コピー）は 2026/07/03 に DROP 済み。現行の同名テーブルは db_common_dev（共通基盤）側のみ（下記「共通DB」節）。
 
-### トランザクション（10テーブル）
+### トランザクション（11テーブル）
 
 | テーブル名 | 日本語名 | 主用途 |
 |-----------|----------|--------|
@@ -264,6 +267,7 @@ erDiagram
 | t_tank_checks | タンクチェック | 日次残量記録 |
 | t_order_reports | 帳票管理 | 印刷/FAX状況 |
 | t_order_dispatch_log | 送信投入履歴 | 発注承認FAX送信の投入実績（二重送信防止） |
+| t_material_plans | 原材料月次計画 | 予実管理Phase1の月次計画（品目別・月次。集計は非保存） |
 
 ---
 
