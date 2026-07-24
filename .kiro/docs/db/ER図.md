@@ -58,6 +58,26 @@ erDiagram
 
 > `m_user_order_setting` は既定出力区分を保持する単独マスタで、他テーブルと FK リレーションを持たない（`t_orders.user_id` と論理的関連のみ・独立）。
 
+## 品目コード対応表（論理関連・FK制約なし）
+
+予実管理の過去データ移行用の対応表 `m_item_code_map`（`db_material_dev`）。旧資材システム(dbNsShizai)由来の旧神崎コード(`kanzaki_code`)と新システムの `m_items.id`(`item_id`)との対応を、SAP品目コード(`sap_id`)をキーに保持する。`item_id` は `m_items.id` への論理参照（物理FK制約なし・突合未解決は NULL）。`sap_id` を一意（`uq_m_item_code_map_01`）。
+
+```mermaid
+erDiagram
+    m_items ||--o| m_item_code_map : "item_id (論理参照)"
+    m_item_code_map {
+        int id PK
+        nvarchar sap_id UK
+        nvarchar kanzaki_code
+        int item_id
+        datetime2 created_at
+        datetime2 updated_at
+        rowversion row_version
+    }
+```
+
+> `m_item_code_map` は旧コード↔新item_id対応の突合を保持する対応表。`item_id` は `m_items.id` を論理参照（物理FK制約なし・突合解決値・未解決は NULL）。`sap_id` は `m_items.item_code` と一致し一意（`uq_m_item_code_map_01`）。
+
 ## トランザクション リレーション
 
 ```mermaid
@@ -218,6 +238,7 @@ erDiagram
 | t_order_dispatch_log | t_orders | reference_code | 発注番号グループ（OrderNo先頭3セグメント）への論理参照 |
 | t_order_dispatch_log | t_smtp_queue | queue_job_id | 共通DB db_common_dev の送信キュージョブID。別DBのためFK制約なし・参照のみ |
 | t_material_plans | m_items | item_id | 予実管理Phase1の月次計画。品目への論理参照（物理FKなし・結果テーブル方針） |
+| m_item_code_map | m_items | item_id | 予実管理の過去データ移行用対応表。品目への論理参照（物理FKなし・突合未解決はNULL）。`sap_id` 一意 |
 
 ---
 
@@ -250,6 +271,7 @@ erDiagram
 | m_report_notes | 帳票備考マスタ | 帳票フッター |
 | m_user_preferences | ユーザー設定 | 画面設定保存 |
 | m_print_output_path | 印刷出力パスマスタ | 印刷出力(PDF)保存先ベースパス保持（独立・リレーションなし） |
+| m_item_code_map | 品目コード対応表 | 予実管理の過去データ移行（旧コード↔新item_id対応の保持。m_items へ論理参照・FKなし） |
 
 > 注: 旧 db_material_dev の `m_print_agent_control`／`m_smtp_config`／`m_smtp_agent_control`（共通基盤移行に伴う孤立コピー）は 2026/07/03 に DROP 済み。現行の同名テーブルは db_common_dev（共通基盤）側のみ（下記「共通DB」節）。
 
